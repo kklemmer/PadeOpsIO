@@ -1,5 +1,0 @@
-This contains no meaningful information.
-
-This was edited on Stampede2.  
-
-And this was edited on my local machine. 
