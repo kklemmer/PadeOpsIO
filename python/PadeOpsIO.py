@@ -62,9 +62,18 @@ class BudgetIO():
         
         # all files associated with this case will begin with <filename>
         if not 'filename' in kwargs: 
-            self.filename = dir_name.split(os.sep)[-1]
+            # defaults to the directory name, split on non-word characters
+            dir_list = re.split('\W+', dir_name)
+            # pick the last non-empty string
+            self.filename = next(s for s in reversed(dir_list) if s)
+        else: 
+            self.filename = kwargs['filename']
+
+        self.filename_budgets = self.filename + '_budgets.npz'  # standardize this
         
-        # if we are given the following keywords, try to 
+        # ========== Associate files ==========
+
+        # if we are given the required keywords, try to initialize from PadeOps source files
         self.associate_padeops = False
         self.associate_npz = False
         if all(x in kwargs for x in ['runid', 'Lx', 'Ly', 'Lz'] ): 
@@ -73,7 +82,7 @@ class BudgetIO():
                 self.associate_padeops = True
 
                 if self.verbose: 
-                    print('Loaded BudgetIO at' + dir_name + 'from PadeOps source files. ')
+                    print('Initialized BudgetIO at' + dir_name + 'from PadeOps source files. ')
 
             except OSError as err: 
                 warnings.warn('Attempted to read PadeOps output files, but at least one was missing.')
@@ -85,7 +94,7 @@ class BudgetIO():
             self.associate_npz = True
 
             if self.verbose: 
-                print('Loaded BudgetIO at' + dir_name + 'from .npz files. ')
+                print('Initialized BudgetIO at' + dir_name + 'from .npz files. ')
 
         self.associate_budget = False
         self.budget = {}  # empty dictionary
@@ -110,7 +119,6 @@ class BudgetIO():
         else: 
             self.tidx = kwargs['tidx']
 
-
         # These lines are taken almost verbatim from PadeOpsViz.py
 
         # read accompanying info file
@@ -127,12 +135,10 @@ class BudgetIO():
         self.dy = self.Ly/self.ny
         self.dz = self.Lz/self.nz
 
-
         # initialize grid
         self.xLine = np.linspace(0,self.Lx-self.dx,self.nx)
         self.yLine = np.linspace(0,self.Ly-self.dy,self.ny)
         self.zLine = np.linspace(self.dz/2,self.Lz-(self.dz/2),self.nz)
-
 
         # object is reading from PadeOps output files directly
         if self.verbose: 
@@ -181,11 +187,14 @@ class BudgetIO():
     def set_filename(self, filename): 
         """
         Changes the filename associated with this object. 
+
+        Make sure filename_budgets is consistent with __init__()
         """
         self.filename = filename
+        self.filename_budgets = filename + "_budgets.npz"
         
         
-    def write_npz(self, write_dir=None, budget_terms='default', filename=None): 
+    def write_npz(self, write_dir=None, budget_terms='default', filename=None, overwrite=False): 
         """
         Saves budgets as .npz files. Each budget receives its own .npz file, with the fourth dimension representing
         the budget term number (minus one, because python indexing starts at zero). 
@@ -210,9 +219,9 @@ class BudgetIO():
         filename (str) : calls self.set_filename()
         """
         
-        if not self.associate_padeops: 
-            warnings.warn('Not reading from PadeOps output files, skipping writing files. ') 
-            return
+        if not self.associate_budget: 
+            warnings.warn('write_npz(): No budgets associated! ') 
+            return 
         
         # declare directory to write to, default to the working directory
         if write_dir is None: 
@@ -221,34 +230,37 @@ class BudgetIO():
         if filename is not None: 
             self.set_filename(filename)
 
-        # # parse which budget terms to load: 
-        # # TODO: Move the budget parsing into its own function. 
-        # if budget_terms=='default': 
-        #     budget_terms = {0: list(range(1, 11)), 
-        #                     1: self.existing_terms(1)}
+        # need to parse budget_terms with the key
+        key_subset = self._parse_budget_terms(budget_terms)
 
-        # elif budget_terms=='all': 
-        #     budget_terms = {i: self.existing_terms(i) for i in self.existing_budgets()}
+        # load budgets
+        self.read_budgets(key_subset)
 
-        # elif type(budget_terms)==str: 
-        #     warnings.warn("keyword argument budget_terms must be either 'default', 'all', or a dictionary.")
-        #     return  # don't write anything
+        filepath = write_dir + os.sep + self.filename_budgets
 
-        # TODO: fix this :)
+        for key in key_subset: 
+            save_arrs = {key: self.budget[key]}  # only save the requested budgets
 
-        for budget in list(budget_terms):  # iterate thru dictionary
-            # load budgets
-            self.ReadVelocities_budget(budget, terms=budget_terms[budget])  # TODO fix this 
+        # don't accidentally overwrite files... 
+        write_arrs = False  # there is probably a better way to do this
 
-            # put budgets into dictionary form 
-            save_arrs = {str(i): self.viz.budget[:, :, :, budget_terms[0].index(i)] for i in budget_terms[0]}
+        if not os.path.exists(filepath): 
+            write_arrs = True
 
-            # save the loaded budgets as npz
-            filepath = write_dir + os.sep + self.filename + '_budget{:1d}.npz'.format(budget)
+        elif overwrite: 
+            warnings.warn("File already exists, overwriting... ")
+            write_arrs = True
+
+        else: 
+            warnings.warn("Existing files found. Failed to write; try passing overwrite=True to override.")
+
+        # write npz files! 
+        if write_arrs: 
             np.savez(filepath, **save_arrs)
-            print("Successfully saved {:}".format(filepath))
-        
-        self._write_metadata()  # TODO
+            self._write_metadata()  # TODO
+            
+            if self.verbose: 
+                print("write_npz: Successfully saved the following budgets: ", list(key_subset.keys()))
         
         
     def _write_metadata(self): 
@@ -269,34 +281,38 @@ class BudgetIO():
     def read_budgets(self, budget_terms='default', mmap=None): 
         """
         Accompanying method to write_budgets. Reads budgets saved as .npz files 
-        """
         
-        if self.associate_padeops: 
-            self._read_budgets_padeops(self, budget_terms)
-        
-        elif self.associated_npz: 
-            self._read_budgets_npz(self, budget_terms, mmap=mmap)
-        
-        if self.verbose: 
-            print("read_budget: Loaded budgets. ")
-        
-
-    def _read_budgets_padeops(self, budget_terms): 
-        """
-        Uses a method similar to ReadVelocities_Budget() in PadeOpsViz to read and store full-field budget terms. 
-
         Arguments 
         ---------
-        budget_terms : dictionary (see ._parse_terms())
+        budget_terms : list of terms (see ._parse_terms())
+        mmap : default None. Sets the memory-map settings in numpy.load(). Expects None, 'r+', 'r', 'w+', 'c'
+       """
+
+        # need to parse budget_terms with the key
+        key_subset = self._parse_budget_terms(budget_terms)
+
+        # TODO - if a) budgets are already loaded, or 
+        #           b) requested budgets do not exist, then we need to remove these from the list. 
+
+        if self.associate_padeops: 
+            self._read_budgets_padeops(key_subset)
+        
+        elif self.associate_npz: 
+            self._read_budgets_npz(key_subset, mmap=mmap)
+        
+        self.associate_budget = True
+        if self.verbose: 
+            print("read_budget: Successfully loaded budgets. ")
+        
+
+    def _read_budgets_padeops(self, key_subset): 
+        """
+        Uses a method similar to ReadVelocities_Budget() in PadeOpsViz to read and store full-field budget terms. 
         """
         tidx = self.last_tidx 
         n = self.last_n
 
-        # need to parse budget_terms with the key
-
-        key_subset = self._parse_budget_terms(budget_terms)
-
-        # ind = 0
+        # TODO - this needs testing
         for key in key_subset:
             budget, term = BudgetIO.key[key]
             u_fname = self.dir_name + '/Run' + '{:02d}'.format(self.runid) + '_budget' + '{:01d}'.format(budget) + \
@@ -305,20 +321,23 @@ class BudgetIO():
             temp = np.fromfile(u_fname, dtype=np.dtype(np.float64), count=-1)
             self.budget[key] = temp
 
-        print('PadeOpsViz loaded the budget fields at time:' + '{:.06f}'.format(tidx))
+        if self.verbose: 
+            print('PadeOpsViz loaded the budget fields at time:' + '{:.06f}'.format(tidx))
 
 
-    def _read_budgets_npz(self, budget_terms, mmap=None): 
+    def _read_budgets_npz(self, key_subset, mmap=None): 
         """
         Reads budgets written by .write_npz() and loads them into memory
-
-        Arguments
-        ---------
-        budget_terms (see ._parse_terms())
-        mmap : default None. Sets the memory-map settings in numpy.load(). Expects None, 'r+', 'r', 'w+', 'c'
         """
-        pass  # TODO
-    
+
+        # load the npz file and keep the requested budget keys
+        for key in key_subset: 
+            npz = np.load(self.dir_name + os.sep + self.filename_budgets)
+            self.budget[key] = npz[key]  # WARNING: this key might not exist! 
+
+        if self.verbose: 
+            print('PadeOpsViz loaded the following budgets from .npz: ', list(key_subset.keys()))
+
 
     def _parse_budget_terms(self, budget_terms): 
         """
@@ -328,7 +347,7 @@ class BudgetIO():
         budget_terms can also be a string: 'all', or 'default'. 
 
         'default' tries to load the following: 
-            Budget 0 terms: u_bar, v_bar, w_bar, all Reynolds stresses, and p_bar
+            Budget 0 terms: ubar, vbar, wbar, all Reynolds stresses, and p_bar
             Budget 1 terms: all momentum terms
         'all' checks what budgets exist and tries to load them all. 
 
@@ -337,13 +356,12 @@ class BudgetIO():
 
         # add string shortcuts here... 
         if budget_terms=='default': 
-            budget_terms = ['u_bar', 'v_bar', 'w_bar', 
-                            'tau_11', 'tau_12', 'tau_13', 'tau_22', 'tau_23', 'tau_33', 
-                            'p_bar']
+            budget_terms = ['ubar', 'vbar', 'wbar', 
+                            'tau11', 'tau12', 'tau13', 'tau22', 'tau23', 'tau33', 
+                            'pbar']
 
         elif budget_terms=='all': 
-            # TODO: FIX THIS
-            budget_terms = {i: self.existing_terms(i) for i in self.existing_budgets()}
+            budget_terms = self.existing_terms()
 
         elif type(budget_terms)==str: 
             warnings.warn("keyword argument budget_terms must be either 'default', 'all', or a list.")
@@ -364,11 +382,12 @@ class BudgetIO():
                 print("Or, if searching key.inverse, the following terms could not be found: ", 
                 [term for term in budget_terms if term not in BudgetIO.key.inverse])
 
+        # TODO: Throw an exception if requested budgets do not exist!! 
+
         return key_subset 
 
 
     def unique_tidx(self): 
-        # There is almost certainly a better way to do this
         """
         Pulls all the unique tidx values from a directory. 
         """
@@ -454,6 +473,7 @@ class BudgetIO():
         -------
         t_list (list) : list of tuples of budgets found
         """
+
         t_list = []
         
         # if no budget is given, look through all saved budgets
@@ -462,19 +482,21 @@ class BudgetIO():
         
         else: 
             # convert to list if integer is given
-            if type(budget_list) != list: 
+            if type(budget) != list: 
                 budget_list = [budget]
                 # this does NOT check to make sure all the budgets request actually exist # TODO
 
         # find budgets matching .npz convention in write_npz()
         if self.associate_npz: 
-            for budget in budget_list: 
-                # we can be sure this file exists because it was found in existing_budgets()
-                filename = glob.glob(self.dir_name + os.sep + '*_budget{:d}.*'.format(budget))[0]
-                npz = np.load(filename)
-                [t_list.append((budget, int(term))) for term in npz.files]  # append tuples 
+            filename = self.dir_name + os.sep + self.filename_budgets
+            npz = np.load(filename)
+            t_list = npz.files
+            # for budget in budget_list: 
+            #     # we can be sure this file exists because it was found in existing_budgets()
+            #     filename = glob.glob(self.dir_name + os.sep + '*_budget{:d}.*'.format(budget))[0]
+            #     npz = np.load(filename)
+            #     [t_list.append((budget, int(term))) for term in npz.files]  # append tuples 
 
-        # TODO - test this
         # find budgets by name matching with PadeOps output conventions
         elif self.associate_padeops: 
 
