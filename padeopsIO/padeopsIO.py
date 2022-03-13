@@ -10,7 +10,7 @@ except ImportError:
     warnings.warn("Could not find package f90nml in system path. ")
     # TODO - handle this somehow
 
-import budget_key  # defines key pairing
+import budgetkey  # defines key pairing
 
 
 class BudgetIO(): 
@@ -18,7 +18,7 @@ class BudgetIO():
     # TODO fix class docstring
     """
 
-    key = budget_key.get_key()
+    key = budgetkey.get_key()
     
     def __init__(self, dir_name, **kwargs):  # outputdir_name, runid=1, tidx=0, Lx=256, Ly=256, Lz=128): 
         """
@@ -239,11 +239,11 @@ class BudgetIO():
         filepath = write_dir + os.sep + self.filename_budgets
 
         for key in key_subset: 
+            # TODO: We might want to crop the domain of the budgets here to reduce filesize... do that here: 
             save_arrs = {key: self.budget[key]}  # only save the requested budgets
 
-        # don't accidentally overwrite files... 
+        # don't unintentionally overwrite files... 
         write_arrs = False  # there is probably a better way to do this
-
         if not os.path.exists(filepath): 
             write_arrs = True
 
