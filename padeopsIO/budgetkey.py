@@ -1,3 +1,12 @@
+"""
+Module containing a bi-directional has thable for the mapping and inverse-mapping
+for budget terms in index-tuple form (budget #, term #) defined in PadeOps and common
+form as defined in get_key()
+
+Kirby Heck
+March 2022
+"""
+
 class bidict(dict):
     """
     Bi-directional dictionary, courtesy of: 
@@ -95,8 +104,12 @@ def get_key():
         'TKE_dissipation': (3, 6), 
         'TKE_buoyancy': (3, 7), 
         'TKE_coriolis': (3, 8), 
-        'TKE_AD': (3, 9)
+        'TKE_AD': (3, 9), 
         # BUDGET 4 TERMS: TODO
+        # BUDGET 5 TERMS: Wake deficit
+        'uwake': (5, 1), 
+        'vwake': (5, 2), 
+        'wwake': (5, 3)
         }
     
     return bidict(key)
