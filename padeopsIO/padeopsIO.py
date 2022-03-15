@@ -82,7 +82,7 @@ class BudgetIO():
                 self.associate_padeops = True
 
                 if self.verbose: 
-                    print('Initialized BudgetIO at' + dir_name + 'from PadeOps source files. ')
+                    print('Initialized BudgetIO at ' + dir_name + ' from PadeOps source files. ')
 
             except OSError as err: 
                 warnings.warn('Attempted to read PadeOps output files, but at least one was missing.')
@@ -94,7 +94,7 @@ class BudgetIO():
             self.associate_npz = True
 
             if self.verbose: 
-                print('Initialized BudgetIO at' + dir_name + 'from .npz files. ')
+                print('Initialized BudgetIO at ' + dir_name + ' from .npz files. ')
 
         self.associate_budget = False
         self.budget = {}  # empty dictionary
@@ -147,7 +147,7 @@ class BudgetIO():
         # do namelist stuff
         try: 
             self._read_inputfile()
-        except Exception as err: 
+        except Exception as err:  # TODO fix this
             warnings.warn("BudgetIO: Problem reading input file. ")
             print(err)
 
@@ -227,20 +227,23 @@ class BudgetIO():
         if write_dir is None: 
             write_dir = self.dir_name
             
-        if filename is not None: 
-            self.set_filename(filename)
-
         # need to parse budget_terms with the key
         key_subset = self._parse_budget_terms(budget_terms)
 
         # load budgets
         self.read_budgets(key_subset)
 
+        # if `filename` is provided, change this in the object
+        # importantly, this needs to be done AFTER reading budgets! 
+        if filename is not None: 
+            self.set_filename(filename)
+
         filepath = write_dir + os.sep + self.filename_budgets
 
+        save_arrs = {}
         for key in key_subset: 
             # TODO: We might want to crop the domain of the budgets here to reduce filesize... do that here: 
-            save_arrs = {key: self.budget[key]}  # only save the requested budgets
+            save_arrs[key] = self.budget[key]  # only save the requested budgets
 
         # don't unintentionally overwrite files... 
         write_arrs = False  # there is probably a better way to do this
@@ -261,6 +264,7 @@ class BudgetIO():
             
             if self.verbose: 
                 print("write_npz: Successfully saved the following budgets: ", list(key_subset.keys()))
+                print("at " + filepath)
         
         
     def _write_metadata(self): 
@@ -319,7 +323,7 @@ class BudgetIO():
                 '_term' + '{:02d}'.format(term) + '_t' + '{:06d}'.format(tidx) + '_n' + '{:06d}'.format(n) + '.s3D'
             
             temp = np.fromfile(u_fname, dtype=np.dtype(np.float64), count=-1)
-            self.budget[key] = temp
+            self.budget[key] = temp.reshape((self.nx,self.ny,self.nz), order='F')  # reshape into a 3D array
 
         if self.verbose: 
             print('PadeOpsViz loaded the budget fields at time:' + '{:.06f}'.format(tidx))
@@ -354,7 +358,7 @@ class BudgetIO():
         For more information on the bi-directional keys, see budget_key.py
         """
 
-        # add string shortcuts here... 
+        # add string shortcuts here... # TODO move shortcuts to budgetkey.py? 
         if budget_terms=='default': 
             budget_terms = ['ubar', 'vbar', 'wbar', 
                             'tau11', 'tau12', 'tau13', 'tau22', 'tau23', 'tau33', 
@@ -409,6 +413,9 @@ class BudgetIO():
         """
         Pulls all the unique tidx values from a directory. 
         """
+
+        # TODO: fix for .npz
+
         # retrieves filenames and parses unique integers, returns an array of unique integers
         filenames = os.listdir(self.dir_name)
         runid = self.runid
@@ -423,6 +430,9 @@ class BudgetIO():
         """
         Pulls all unique n from budget terms in a directory and returns the largest value. 
         """
+
+        # TODO: fix for .npz
+
         filenames = os.listdir(self.dir_name)
         runid = self.runid
 
@@ -463,7 +473,7 @@ class BudgetIO():
         Arguments 
         ---------
         budget (integer) : optional, default None. If provided, searches a particular budget for existing terms. 
-            Otherwise, will search for all existing terms. budget can also be a list of integers. 
+            Otherwise, will search for all existing terms. `budget` can also be a list of integers. 
             Budget 0: mean statistics
             Budget 1: momentum
             Budget 2: MKE
@@ -472,6 +482,7 @@ class BudgetIO():
         Returns
         -------
         t_list (list) : list of tuples of budgets found
+
         """
 
         t_list = []
@@ -491,11 +502,6 @@ class BudgetIO():
             filename = self.dir_name + os.sep + self.filename_budgets
             npz = np.load(filename)
             t_list = npz.files
-            # for budget in budget_list: 
-            #     # we can be sure this file exists because it was found in existing_budgets()
-            #     filename = glob.glob(self.dir_name + os.sep + '*_budget{:d}.*'.format(budget))[0]
-            #     npz = np.load(filename)
-            #     [t_list.append((budget, int(term))) for term in npz.files]  # append tuples 
 
         # find budgets by name matching with PadeOps output conventions
         elif self.associate_padeops: 
@@ -516,3 +522,10 @@ class BudgetIO():
             return []
         
         return t_list
+
+
+if __name__ == "__main__": 
+    """
+    TODO - add unit tests to class
+    """
+    print("padeopsIO: No unit tests included yet. ")
