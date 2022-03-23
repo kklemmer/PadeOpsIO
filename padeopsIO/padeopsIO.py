@@ -176,7 +176,7 @@ class BudgetIO():
 
         if 'runid' in kwargs.keys(): 
             # if given a runid, search for an inputfile with Run{runid} in the name
-            inputfile_ls = glob.glob(self.dir_name + os.se + '*Run{:d}*.dat'.format(kwargs['runid']))
+            inputfile_ls = glob.glob(self.dir_name + os.sep + 'Run*{:d}*.dat'.format(kwargs['runid']))
 
             if len(inputfile_ls) == 0 and self.verbose: 
                 warnings.warn('_read_inputfile(): runid {:d} requested, \
@@ -388,7 +388,7 @@ class BudgetIO():
         key_subset = self._parse_budget_terms(budget_terms)
 
         # TODO - if a) budgets are already loaded, or 
-        #           b) requested budgets do not exist, then we need to remove these from the list. 
+        #           b) requested budgets do not exist, then we need to remove these from the list.  # this is done :)
 
         if self.associate_padeops: 
             self._read_budgets_padeops(key_subset)
@@ -520,7 +520,7 @@ class BudgetIO():
 
         if input: 
             if self.associate_nml: 
-                u, v = inflow.InflowParser.inflow_offline()
+                u, v = inflow.InflowParser.inflow_offline(**self.input_nml['AD_coriolis'], zLine=self.zLine)
             
             # reading from the budgets
             if input: 
@@ -653,10 +653,6 @@ class BudgetIO():
             
             budget_list = [BudgetIO.key[t][0] for t in t_list]
 
-            # # capturing *_budget(\d+).*
-            # budget_list = [int(re.findall('.*_budget(\d+).*', name)[0]) for name in filenames
-            #                 if re.findall('.*_budget(\d+).*', name)]
-
         elif self.associate_padeops: 
             runid = self.runid
             # capturing *_budget(\d+)* in filenames
@@ -700,8 +696,6 @@ class BudgetIO():
             # convert to list if integer is given
             if type(budget) != list: 
                 budget_list = [budget]
-                # this does NOT check to make sure all the budgets request actually exist # TODO
-                # TODO fix npz
 
         # find budgets matching .npz convention in write_npz()
         if self.associate_npz: 
