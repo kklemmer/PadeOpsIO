@@ -229,6 +229,8 @@ class BudgetIO():
         
         # BUDGET VARIABLES: 
             # last_tidx, last_n,  # TODO
+        self.last_tidx = self.last_budget_tidx()
+        self.last_n = self.last_budget_n() 
 
     
     def _load_grid(self): 
@@ -427,7 +429,7 @@ class BudgetIO():
         # load the npz file and keep the requested budget keys
         for key in key_subset: 
             npz = np.load(self.dir_name + os.sep + self.filename_budgets)
-            self.budget[key] = npz[key]  # WARNING: this key might not exist! 
+            self.budget[key] = npz[key]  
 
         if self.verbose: 
             print('PadeOpsViz loaded the following budgets from .npz: ', list(key_subset.keys()))
@@ -462,6 +464,7 @@ class BudgetIO():
             return {}  # empty dictionary
 
         # parse through terms: they are either 1) valid, 2) missing (but valid keys), or 3) invalid (not in BudgetIO.key)
+
         existing_keys = self.existing_terms()
         existing_tup = [BudgetIO.key[key] for key in existing_keys]  # corresponding associated tuples (#, #)
 
@@ -481,15 +484,16 @@ class BudgetIO():
         key_subset = {key: BudgetIO.key[key] for key in valid_terms}
 
         # warn the user if some requested terms did not exist
-
         if len(key_subset) == 0: 
             warnings.warn('_parse_budget_terms(): No keys being returned; none matched.')
 
         if len(missing_terms) > 0: 
-            warnings.warn('_parse_budget_terms(): Several terms were requested but could not be found: {}'.format(missing_terms))
+            warnings.warn('_parse_budget_terms(): Several terms were requested but the following could not be found: \
+                {}'.format(missing_terms))
 
         if len(invalid_terms) > 0: 
-            warnings.warn('_parse_budget_terms(): The following budget terms were requested but do not exist: {}'.format(invalid_terms))
+            warnings.warn('_parse_budget_terms(): The following budget terms were requested but the following do not exist: \
+                {}'.format(invalid_terms))
 
         return key_subset 
 
@@ -537,17 +541,52 @@ class BudgetIO():
             return u, v
 
     
-    def calc_wake(self, offline=False, wInflow=False):
+    def calc_wake(self, offline=False, wInflow=False, overwrite=False):
         """
         Computes the wake deficit by subtracting the target inflow from the flow field. 
 
         Arguments
         ---------
         see _get_inflow()
+        overwrite (bool) : re-computes wakes if they are already read in. 
 
         Returns
         -------
+        None (updates self.budget[] with 'uwake' and 'vwake' keys)
+
         """ 
+
+        target_terms = ['uwake', 'vwake']
+        if wInflow: 
+            target_terms.append('wwake')
+
+        # check to see if the terms exist already
+        if all(t in self.budget.keys() for t in target_terms): 
+            if not overwrite: 
+                warnings.warn('Wake terms already computed, returning. To compute anyway, use keyword overwrite=True')
+                return
+
+        req_terms = ['ubar', 'vbar']  # required budget terms
+        if wInflow: 
+            req_terms.append('wbar') # might also need w
+        
+        # Need mean velocity fields to be loaded
+        if not all(t in self.budget.keys() for t in req_terms): 
+            self.read_budgets(budget_terms=req_terms)
+
+        # retrieve inflow
+        if wInflow: 
+            u, v, w = self._get_inflow(offline=offline, wInflow=wInflow)
+            self.budget['wwake'] = self.budget['wbar'] - w[np.newaxis, np.newaxis, :]
+        
+        else: 
+            u, v = self._get_inflow(offline=offline, wInflow=wInflow)
+
+        self.budget['uwake'] = u[np.newaxis, np.newaxis, :] - self.budget['ubar']
+        self.budget['vwake'] = v[np.newaxis, np.newaxis, :] - self.budget['vbar']
+
+        if self.verbose: 
+            print("calc_wake(): Computed wake velocities. ")
 
 
     def unique_tidx(self): 
@@ -608,9 +647,15 @@ class BudgetIO():
         filenames = os.listdir(self.dir_name)
 
         if self.associate_npz: 
-            # capturing *_budget(\d+).*
-            budget_list = [int(re.findall('.*_budget(\d+).*', name)[0]) for name in filenames
-                            if re.findall('.*_budget(\d+).*', name)]
+            filename = self.dir_name + os.sep + self.filename_budgets
+            with np.load(filename) as npz: 
+                t_list = npz.files  # load all the budget filenames
+            
+            budget_list = [BudgetIO.key[t][0] for t in t_list]
+
+            # # capturing *_budget(\d+).*
+            # budget_list = [int(re.findall('.*_budget(\d+).*', name)[0]) for name in filenames
+            #                 if re.findall('.*_budget(\d+).*', name)]
 
         elif self.associate_padeops: 
             runid = self.runid
@@ -619,10 +664,10 @@ class BudgetIO():
                             for name in filenames if re.findall('Run{:02d}.*_budget(\d+).*'.format(runid), name)]
 
         else: 
-            warnings.warn('existing_budgets(): No budgets found. ')
+            warnings.warn('existing_budgets(): No associated budget files found. ')
             return []
 
-        return np.unique(np.array(budget_list))
+        return list(np.unique(budget_list))
     
     
     def existing_terms(self, budget=None): 
@@ -637,6 +682,7 @@ class BudgetIO():
             Budget 1: momentum
             Budget 2: MKE
             Budget 3: TKE
+            Budget 5: Wake deficit
 
         Returns
         -------
@@ -655,12 +701,22 @@ class BudgetIO():
             if type(budget) != list: 
                 budget_list = [budget]
                 # this does NOT check to make sure all the budgets request actually exist # TODO
+                # TODO fix npz
 
         # find budgets matching .npz convention in write_npz()
         if self.associate_npz: 
             filename = self.dir_name + os.sep + self.filename_budgets
-            npz = np.load(filename)
-            t_list = npz.files
+            with np.load(filename) as npz: 
+                all_terms = npz.files
+
+            if budget is None:  # i.e. requesting all budgets
+                return all_terms  # we can stop here without sorting through each budget
+            
+            tup_list = [BudgetIO.key[t] for t in all_terms]  # list of associated tuples
+            t_list = []  # this is the list to be built and returned
+
+            for b in budget_list: 
+                t_list = t_list + [tup for tup in tup_list if tup[0] == b]
 
         # find budgets by name matching with PadeOps output conventions
         elif self.associate_padeops: 
@@ -669,12 +725,13 @@ class BudgetIO():
             runid = self.runid
 
             # loop through budgets
-            for budget in budget_list: 
+            for b in budget_list: 
                 # capturing *_term(\d+)* in filenames
                 terms = [int(re.findall('Run{:02d}_budget{:01d}_term(\d+).*'.format(runid, budget), name)[0]) 
                         for name in filenames if 
                         re.findall('Run{:02d}_budget{:01d}_term(\d+).*'.format(runid, budget), name)]
-                [t_list.append((budget, term)) for term in terms]  # append tuples
+                [t_list.append((b, term)) for term in terms]  # append tuples
+                # TODO check uniqueness
         
         else: 
             warnings.warn('existing_terms(): No terms found for budget ' + str(budget))
