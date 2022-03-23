@@ -120,11 +120,19 @@ class BudgetIO():
         Raises OSError if source files cannot be read
         """
 
-        # Begin with keyword arguments
-        self.runid = kwargs['runid']
-        self.Lx = kwargs['Lx']
-        self.Ly = kwargs['Ly']
-        self.Lz = kwargs['Lz']
+        # Begin with keyword arguments - initialize if these were passed in
+        if all(x in kwargs for x in ['runid', 'Lx', 'Ly', 'Lz']): 
+            self.runid = kwargs['runid']
+            self.Lx = kwargs['Lx']
+            self.Ly = kwargs['Ly']
+            self.Lz = kwargs['Lz']  
+                
+        # do namelist stuff - this is necessary if Lx, Ly, ... etc were not passed in. 
+        try: 
+            self._read_inputfile()
+        except FileNotFoundError as err:  # TODO fix this
+            warnings.warn("BudgetIO: Problem reading input file. ")
+            print(err)
 
         # default time ID for initialization
         if not 'tidx' in kwargs: 
@@ -149,13 +157,6 @@ class BudgetIO():
         # object is reading from PadeOps output files directly
         if self.verbose: 
             print('BudgetIO initialized using info files at time:' + '{:.06f}'.format(self.time))
-        
-        # do namelist stuff
-        try: 
-            self._read_inputfile()
-        except FileNotFoundError as err:  # TODO fix this
-            warnings.warn("BudgetIO: Problem reading input file. ")
-            print(err)
 
         self.last_tidx = self.last_budget_tidx()  # last tidx in the run with budgets
         self.last_n = self.last_budget_n()  # last tidx with an associated budget
@@ -176,12 +177,12 @@ class BudgetIO():
 
         if 'runid' in kwargs.keys(): 
             # if given a runid, search for an inputfile with Run{runid} in the name
-            inputfile_ls = glob.glob(self.dir_name + os.sep + 'Run*{:d}*.dat'.format(kwargs['runid']))
+            inputfile_ls = glob.glob(self.dir_name + os.sep + 'Run{:02d}*.dat'.format(kwargs['runid']))
 
             if len(inputfile_ls) == 0 and self.verbose: 
                 warnings.warn('_read_inputfile(): runid {:d} requested, \
                     but no matching inputfile found was found.'.format(kwargs['runid']))
-        
+                        
         # if no runid given, or if the previous search failed, search all files ending in '*.dat' 
         if len(inputfile_ls) == 0: 
             inputfile_ls = glob.glob(self.dir_name + os.sep + '*.dat')  # for now, just search this. # TODO improve later? 
@@ -191,9 +192,12 @@ class BudgetIO():
             warnings.warn('_read_inputfile(): Multiple files ending in *.dat found')
             if self.verbose: 
                 print("    Found the following files:", inputfile_ls)
-
+        
+        if self.verbose: 
+            print("Reading namelist file from {}".format(inputfile_ls[0]))
+            
         self.input_nml = f90nml.read(inputfile_ls[0])
-
+        
         # aside from reading in the Namelist, which has all of the metadata, also make some
         # parameters more accessible
 
@@ -201,12 +205,12 @@ class BudgetIO():
         self.runid = self.input_nml['io']['runid']
 
         # DOMAIN VARIABLES: 
-        self.Lx = self.input_nml['input']['Lx']
-        self.Ly = self.input_nml['input']['Ly']
-        self.Lz = self.input_nml['input']['Lz']
-        self.nx = self.input_nml['ad_coriolisinput']['nx']
-        self.ny = self.input_nml['ad_coriolisinput']['ny']
-        self.nz = self.input_nml['ad_coriolisinput']['nz']
+        self.nx = self.input_nml['input']['nx']
+        self.ny = self.input_nml['input']['ny']
+        self.nz = self.input_nml['input']['nz']
+        self.Lx = self.input_nml['ad_coriolisinput']['Lx']
+        self.Ly = self.input_nml['ad_coriolisinput']['Ly']
+        self.Lz = self.input_nml['ad_coriolisinput']['Lz']
 
         if not self.associate_grid: 
             self._load_grid()
@@ -228,7 +232,6 @@ class BudgetIO():
         self.associate_nml = True  # successfully loaded input file
         
         # BUDGET VARIABLES: 
-            # last_tidx, last_n,  # TODO
         self.last_tidx = self.last_budget_tidx()
         self.last_n = self.last_budget_n() 
 
@@ -463,6 +466,7 @@ class BudgetIO():
             warnings.warn("keyword argument budget_terms must be either 'default', 'all', or a list.")
             return {}  # empty dictionary
 
+        
         # parse through terms: they are either 1) valid, 2) missing (but valid keys), or 3) invalid (not in BudgetIO.key)
 
         existing_keys = self.existing_terms()
@@ -483,6 +487,7 @@ class BudgetIO():
         # generate the key
         key_subset = {key: BudgetIO.key[key] for key in valid_terms}
 
+        
         # warn the user if some requested terms did not exist
         if len(key_subset) == 0: 
             warnings.warn('_parse_budget_terms(): No keys being returned; none matched.')
@@ -518,12 +523,13 @@ class BudgetIO():
         
         # load using InflowParser: 
 
-        if input: 
+        if offline: 
             if self.associate_nml: 
-                u, v = inflow.InflowParser.inflow_offline(**self.input_nml['AD_coriolis'], zLine=self.zLine)
+                print(dict(self.input_nml['AD_coriolisinput']))
+                u, v = inflow.InflowParser.inflow_offline(**dict(self.input_nml['AD_coriolisinput']), zLine=self.zLine)
             
             # reading from the budgets
-            if input: 
+            else: 
                 warnings.warn('_get_inflow: Requested offline inflow, but namelist not associated. Trying online.')
                 u, v = inflow.InflowParser.inflow_budgets(self)
                 
@@ -696,6 +702,8 @@ class BudgetIO():
             # convert to list if integer is given
             if type(budget) != list: 
                 budget_list = [budget]
+            else: 
+                budget_list = budget
 
         # find budgets matching .npz convention in write_npz()
         if self.associate_npz: 
@@ -710,22 +718,25 @@ class BudgetIO():
             t_list = []  # this is the list to be built and returned
 
             for b in budget_list: 
-                t_list = t_list + [tup for tup in tup_list if tup[0] == b]
+                t_list += [tup for tup in tup_list if tup[0] == b]
 
         # find budgets by name matching with PadeOps output conventions
         elif self.associate_padeops: 
 
             filenames = os.listdir(self.dir_name)
             runid = self.runid
-
+            
+            tup_list = []
             # loop through budgets
             for b in budget_list: 
                 # capturing *_term(\d+)* in filenames
-                terms = [int(re.findall('Run{:02d}_budget{:01d}_term(\d+).*'.format(runid, budget), name)[0]) 
+                terms = [int(re.findall('Run{:02d}_budget{:01d}_term(\d+).*'.format(runid, b), name)[0]) 
                         for name in filenames if 
-                        re.findall('Run{:02d}_budget{:01d}_term(\d+).*'.format(runid, budget), name)]
-                [t_list.append((b, term)) for term in terms]  # append tuples
-                # TODO check uniqueness
+                        re.findall('Run{:02d}_budget{:01d}_term(\d+).*'.format(runid, b), name)]
+                tup_list += [((b, term)) for term in set(terms)]  # these are all tuples
+            
+            # convert tuples to keys
+            t_list = [BudgetIO.key.inverse[key][0] for key in tup_list]
         
         else: 
             warnings.warn('existing_terms(): No terms found for budget ' + str(budget))
