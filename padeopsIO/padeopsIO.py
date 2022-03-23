@@ -144,6 +144,9 @@ class BudgetIO():
 
         # read accompanying info file
         # may throw OSError
+        
+        # TODO this may all be in the input file. 
+        
         info_fname = self.dir_name + '/Run' + '{:02d}'.format(self.runid) + '_info_t' + '{:06d}'.format(self.tidx) + '.out'
         self.info = np.genfromtxt(info_fname, dtype=None)
         self.time = self.info[0]
@@ -152,7 +155,8 @@ class BudgetIO():
         self.ny = int(self.info[2])
         self.nz = int(self.info[3])
 
-        self._load_grid()
+        if not self.associate_grid: 
+            self._load_grid()
 
         # object is reading from PadeOps output files directly
         if self.verbose: 
@@ -198,9 +202,25 @@ class BudgetIO():
             
         self.input_nml = f90nml.read(inputfile_ls[0])
         
-        # aside from reading in the Namelist, which has all of the metadata, also make some
-        # parameters more accessible
+        self._convenience_variables()  # make some variables in the metadata more accessible
+        
+        self.associate_nml = True  # successfully loaded input file
+        
+        # BUDGET VARIABLES: 
+        self.last_tidx = self.last_budget_tidx()
+        self.last_n = self.last_budget_n() 
 
+        
+    def _convenience_variables(self): 
+        """
+        Aside from reading in the Namelist, which has all of the metadata, also make some
+        parameters more accessible. 
+        
+        Called by _read_inputfile() and by _init_npz()
+        
+        Special note: these are all lower case when reading from the dictionary or namelist! 
+        """
+                
         # RUN VARIABLES: 
         self.runid = self.input_nml['io']['runid']
 
@@ -208,9 +228,9 @@ class BudgetIO():
         self.nx = self.input_nml['input']['nx']
         self.ny = self.input_nml['input']['ny']
         self.nz = self.input_nml['input']['nz']
-        self.Lx = self.input_nml['ad_coriolisinput']['Lx']
-        self.Ly = self.input_nml['ad_coriolisinput']['Ly']
-        self.Lz = self.input_nml['ad_coriolisinput']['Lz']
+        self.Lx = self.input_nml['ad_coriolisinput']['lx']
+        self.Ly = self.input_nml['ad_coriolisinput']['ly']
+        self.Lz = self.input_nml['ad_coriolisinput']['lz']
 
         if not self.associate_grid: 
             self._load_grid()
@@ -222,18 +242,12 @@ class BudgetIO():
         if self.input_nml['physics']['isinviscid']:  # boolean
             self.Re = np.Inf
         else: 
-            self.Re = self.input_nml['physics']['Re']
+            self.Re = self.input_nml['physics']['re']
 
         if self.input_nml['physics']['usecoriolis']: 
-            self.Ro = self.input_nml['physics']['Ro']
+            self.Ro = self.input_nml['physics']['ro']
         else: 
             self.Ro = np.Inf
-
-        self.associate_nml = True  # successfully loaded input file
-        
-        # BUDGET VARIABLES: 
-        self.last_tidx = self.last_budget_tidx()
-        self.last_n = self.last_budget_n() 
 
     
     def _load_grid(self): 
@@ -268,13 +282,21 @@ class BudgetIO():
         One filename including "{filename}_budgets.npz"
         One filename including "_metadata.npz"
         """
-
-        # budget_files = glob.glob(self.dir_name + os.sep + '*_budget.npz')
-
-        # TODO need to initialize metadata fields, establish what budgets exist, etc. 
-
+        
+        # check budget files
+        
+        budget_files = glob.glob(self.dir_name + os.sep + '*_budgets.npz')
+        if len(budget_files) == 0: 
+            warnings.warn("No associated budget files found")
+        
+        # load metadata: expects a file named <filename>_metadata.npy
+        
+        self.input_nml = np.load(self.dir_name + os.sep + self.filename + '_metadata.npy').item()
+        self.associate_nml = True
+        
+        self._convenience_variables()  # also loads the grid
+        
         if self.verbose: 
-            print('  TODO: this did not actually do anything.')
             print('BudgetIO initialized using .npz files.')
 
 
@@ -316,7 +338,29 @@ class BudgetIO():
         if not self.associate_budget: 
             warnings.warn('write_npz(): No budgets associated! ') 
             return 
+        
+        # declare directory to write to, default to the working directory
+        if write_dir is None: 
+            write_dir = self.dir_name
+        
+        if budget_terms=='current': 
+            # these are the currently loaded budgets
+            key_subset = self.budget.keys()
+            
+        else: 
+            # need to parse budget_terms with the key
+            key_subset = self._parse_budget_terms(budget_terms)
 
+            # load budgets
+            self.read_budgets(key_subset)
+
+        # if `filename` is provided, change this in the object
+        # importantly, this needs to be done AFTER reading budgets! 
+        if filename is not None: 
+            self.set_filename(filename)
+
+        filepath = write_dir + os.sep + self.filename_budgets
+        
         # don't unintentionally overwrite files... 
         write_arrs = False  # this variable doesn't actually do anything
         if not os.path.exists(filepath): 
@@ -329,23 +373,6 @@ class BudgetIO():
         else: 
             warnings.warn("Existing files found. Failed to write; try passing overwrite=True to override.")
             return
-        
-        # declare directory to write to, default to the working directory
-        if write_dir is None: 
-            write_dir = self.dir_name
-            
-        # need to parse budget_terms with the key
-        key_subset = self._parse_budget_terms(budget_terms)
-
-        # load budgets
-        self.read_budgets(key_subset)
-
-        # if `filename` is provided, change this in the object
-        # importantly, this needs to be done AFTER reading budgets! 
-        if filename is not None: 
-            self.set_filename(filename)
-
-        filepath = write_dir + os.sep + self.filename_budgets
 
         save_arrs = {}
         for key in key_subset: 
@@ -355,24 +382,41 @@ class BudgetIO():
         # write npz files! 
         if write_arrs: 
             np.savez(filepath, **save_arrs)
-            self._write_metadata()  # TODO
+            self._write_metadata(write_dir)  # TODO
             
             if self.verbose: 
-                print("write_npz: Successfully saved the following budgets: ", list(key_subset.keys()))
+                print("write_npz: Successfully saved the following budgets: ", list(key_subset))
                 print("at " + filepath)
         
         
-    def _write_metadata(self): 
+    def _write_metadata(self, write_dir): 
         """
         The saved budgets aren't useful on their own unless we also save some information like the mesh
-        used in the simulation and (possibly) some other information. That goes here. 
+        used in the simulation and some other information like the last timestep. That goes here. 
         """
-        pass  # TODO
-
+        
+        if self.associate_padeops: 
+            # create a copy of the input namelist
+            
+            meta = self.input_nml.todict().copy() 
+            meta['auxiliary'] = {  # this is new stuff not in the namelist
+                                 'last_n': self.last_n, 
+                                 'last_tidx': self.last_tidx
+                                 # add more things here
+                                }
+        else: 
+            meta = self.input_nml.copy()  # copy is probably unnecessary
+        
+        filename = write_dir + os.sep + self.filename + '_metadata.npy'
+        np.save(filename, meta)
+        
+        if self.verbose: 
+            print('_write_metadata(): metadata written to {}'.format(filename))
+        
 
     def _read_metadata(self): 
         """
-        Reads the saved .npz written in _write_metadata(). 
+        Reads the saved .npy written in _write_metadata(). 
         """
         pass  # TODO
 
