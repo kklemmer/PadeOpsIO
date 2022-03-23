@@ -13,8 +13,7 @@ class InflowParser():
     This class is an interface with supplemental functions that is not meant to be instantiated. 
     """
 
-    def inflow_offline(InflowProfileType=0, InflowProfileThick=0, InflowProfileAmplit=0, 
-                       uInflow=1., vInflow=0., zLine=None, buffer=0.8): 
+    def inflow_offline(**kwargs): 
         """
         Parse inflow from the namelist variables found in Fortran. This function should be kept 
         consistent with initialize.F90 in PadeOps. 
@@ -41,11 +40,36 @@ class InflowParser():
         -------
         u, v (array) : [nz x 1] array of streamwise and lateral velocities at the inlet
 
-        """
+        Raises
+        ------
+        NameError if insufficient or incompatible input arguments
+        
+        """        
 
-        if zLine is None: 
-            warnings.warn('InflowParser.inflow_offline(): No z-coordinate specified!')
+        # check keyword arguments
+        if 'zLine' in kwargs: 
+            zLine = kwargs['zLine']
+        else: 
+            warnings.warn('InflowParser.inflow_offline(): No z-coordinates specified!')
             return
+
+        # because not all the profiles need all these variables, try to parse variables individually
+        # may throw NameError if a required variable is not provided
+        if 'InflowProfileType' in kwargs: 
+            InflowProfileType = kwargs['InflowProfileType']
+        if 'InflowProfileThick' in kwargs: 
+            InflowProfileThick = kwargs['InflowProfileThick']
+        if 'InflowProfileAmplit' in kwargs: 
+            InflowProfileAmplit = kwargs['InflowProfileAmplit']
+        if 'uInflow' in kwargs: 
+            uInflow = kwargs['uInflow']
+        if 'vInflow' in kwargs: 
+            vInflow = kwargs['vInflow']
+        
+        if 'buffer' in kwargs: 
+            buffer = kwargs['buffer']
+        else: 
+            buffer = 0.8
 
         # set "default" values/allocate memory/ensure variables exist
         u = np.ones(zLine.shape)
@@ -122,6 +146,7 @@ class InflowParser():
 
         else: 
             warnings.warn("InflowParser.inflow_offline(): InflowProfileType {:d} not matched. Returning None".format(InflowProfileType))
+            return None  
 
         return u, v
 
@@ -144,7 +169,7 @@ class InflowParser():
             vbar = budget_obj.budget['vbar']
         except KeyError as e: 
             if budget_obj.verbose: 
-                print("InflowParser.inflow_budgets(): either 'ubar' or 'vbar' not loaded. Calling read_budgets().")
+                print("InflowParser.inflow_budgets(): 'ubar' or 'vbar' not loaded. Calling read_budgets().")
 
             budget_obj.read_budgets(['ubar', 'vbar'])
             ubar = budget_obj.budget['ubar']
