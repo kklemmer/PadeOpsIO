@@ -1,3 +1,4 @@
+from tkinter import W
 import numpy as np
 import os
 import re
@@ -9,8 +10,10 @@ try:
 except ImportError: 
     warnings.warn("Could not find package f90nml in system path. ")
     # TODO - handle this somehow
+    f90nml = None
 
 import budgetkey  # defines key pairing
+import inflow  # interface to retrieve inflow profiles
 
 
 class BudgetIO(): 
@@ -20,6 +23,7 @@ class BudgetIO():
 
     key = budgetkey.get_key()
     
+
     def __init__(self, dir_name, **kwargs):  # outputdir_name, runid=1, tidx=0, Lx=256, Ly=256, Lz=128): 
         """
         Class initiator. Creates different instance variables depending on the keyword arguments given. 
@@ -28,12 +32,14 @@ class BudgetIO():
         by PadeOps, then this is the directory where those files are stored. This object may also read information
         from a local subset of saved data.  
         
-        The PadeOpsIO class will create a PadeOpsViz instance if the following keyword arguments are given: 
+        The BudgetIO class will read source files from PadeOps if the following keyword arguments are given: 
             runid (int)
             Lx (int)
             Ly (int)
             Lz (int)
             tidx (int) - optional, default is zero. 
+
+        Alternatively, BudgetIO will try to initialize from source files if kwarg `padeops` is given. 
             
         If not all of those keyword arguments are present, then the directory name will (attempt to) read from 
         budgets of saved .npz files. 
@@ -42,7 +48,7 @@ class BudgetIO():
         RUN INFORMATION: 
             filename, dir_name, 
         DOMAIN VARIABLES: 
-            Lx, Ly, Lz, nx, ny, nz, dx, dy, dz, xline, yline, zline, 
+            Lx, Ly, Lz, nx, ny, nz, dx, dy, dz, xLine, yLine, zLine, 
         TURBINE VARIABLES: 
             nTurb, 
         PHYSICS: 
@@ -76,7 +82,11 @@ class BudgetIO():
         # if we are given the required keywords, try to initialize from PadeOps source files
         self.associate_padeops = False
         self.associate_npz = False
-        if all(x in kwargs for x in ['runid', 'Lx', 'Ly', 'Lz'] ): 
+        self.associate_nml = False
+        self.associate_budget = False
+        self.associate_grid = False
+
+        if all(x in kwargs for x in ['runid', 'Lx', 'Ly', 'Lz']) or ('padeops' in kwargs): 
             try: 
                 self._init_padeops(**kwargs)
                 self.associate_padeops = True
@@ -96,8 +106,11 @@ class BudgetIO():
             if self.verbose: 
                 print('Initialized BudgetIO at ' + dir_name + ' from .npz files. ')
 
-        self.associate_budget = False
         self.budget = {}  # empty dictionary
+
+        if 'read_budgets' in kwargs: 
+            # if read_budgets passed in as keyword argument, read budgets on initialization
+            self.read_budgets(budget_terms=kwargs['read_budgets'])
     
 
     def _init_padeops(self, **kwargs): 
@@ -131,14 +144,7 @@ class BudgetIO():
         self.ny = int(self.info[2])
         self.nz = int(self.info[3])
 
-        self.dx = self.Lx/self.nx
-        self.dy = self.Ly/self.ny
-        self.dz = self.Lz/self.nz
-
-        # initialize grid
-        self.xLine = np.linspace(0,self.Lx-self.dx,self.nx)
-        self.yLine = np.linspace(0,self.Ly-self.dy,self.ny)
-        self.zLine = np.linspace(self.dz/2,self.Lz-(self.dz/2),self.nz)
+        self._load_grid()
 
         # object is reading from PadeOps output files directly
         if self.verbose: 
@@ -147,7 +153,7 @@ class BudgetIO():
         # do namelist stuff
         try: 
             self._read_inputfile()
-        except Exception as err:  # TODO fix this
+        except FileNotFoundError as err:  # TODO fix this
             warnings.warn("BudgetIO: Problem reading input file. ")
             print(err)
 
@@ -161,7 +167,91 @@ class BudgetIO():
 
         Dependencies: f90nml, see https://github.com/marshallward/f90nml 
         """
-        pass  # TODO
+        
+        if f90nml is None: 
+            warnings.warn('_raed_inputfile(): No namelist reader loaded. ')
+            return
+
+        inputfile_ls = []  
+
+        if 'runid' in kwargs.keys(): 
+            # if given a runid, search for an inputfile with Run{runid} in the name
+            inputfile_ls = glob.glob(self.dir_name + os.se + '*Run{:d}*.dat'.format(kwargs['runid']))
+
+            if len(inputfile_ls) == 0 and self.verbose: 
+                warnings.warn('_read_inputfile(): runid {:d} requested, \
+                    but no matching inputfile found was found.'.format(kwargs['runid']))
+        
+        # if no runid given, or if the previous search failed, search all files ending in '*.dat' 
+        if len(inputfile_ls) == 0: 
+            inputfile_ls = glob.glob(self.dir_name + os.sep + '*.dat')  # for now, just search this. # TODO improve later? 
+
+        # there should only be one input file for each run 
+        if len(inputfile_ls) > 1: 
+            warnings.warn('_read_inputfile(): Multiple files ending in *.dat found')
+            if self.verbose: 
+                print("    Found the following files:", inputfile_ls)
+
+        self.input_nml = f90nml.read(inputfile_ls[0])
+
+        # aside from reading in the Namelist, which has all of the metadata, also make some
+        # parameters more accessible
+
+        # RUN VARIABLES: 
+        self.runid = self.input_nml['io']['runid']
+
+        # DOMAIN VARIABLES: 
+        self.Lx = self.input_nml['input']['Lx']
+        self.Ly = self.input_nml['input']['Ly']
+        self.Lz = self.input_nml['input']['Lz']
+        self.nx = self.input_nml['ad_coriolisinput']['nx']
+        self.ny = self.input_nml['ad_coriolisinput']['ny']
+        self.nz = self.input_nml['ad_coriolisinput']['nz']
+
+        if not self.associate_grid: 
+            self._load_grid()
+        
+        # TURBINE VARIABLES: 
+        self.nTurb = self.input_nml['windturbines']['num_turbines']
+
+        # PHYSICS: 
+        if self.input_nml['physics']['isinviscid']:  # boolean
+            self.Re = np.Inf
+        else: 
+            self.Re = self.input_nml['physics']['Re']
+
+        if self.input_nml['physics']['usecoriolis']: 
+            self.Ro = self.input_nml['physics']['Ro']
+        else: 
+            self.Ro = np.Inf
+
+        self.associate_nml = True  # successfully loaded input file
+        
+        # BUDGET VARIABLES: 
+            # last_tidx, last_n,  # TODO
+
+    
+    def _load_grid(self): 
+        """
+        Creates dx, dy, dz, and xLine, yLine, zLine variables. 
+        
+        Expects (self.)Lx, Ly, Lz, nx, ny, nz to exist. 
+        """
+
+        if self.associate_grid and self.verbose: 
+            print("_load_grid(): Grid already exists. ")
+            return
+        
+        self.dx = self.Lx/self.nx
+        self.dy = self.Ly/self.ny
+        self.dz = self.Lz/self.nz
+
+        # initialize grid
+        self.xLine = np.linspace(0,self.Lx-self.dx,self.nx)
+        self.yLine = np.linspace(0,self.Ly-self.dy,self.ny)
+        self.zLine = np.linspace(self.dz/2,self.Lz-(self.dz/2),self.nz)
+
+        self.associate_grid = True
 
 
     def _init_npz(self, **kwargs): 
@@ -169,18 +259,17 @@ class BudgetIO():
         Initializes the BudgetIO object by attempting to read .npz files saved from a previous BudgetIO object 
         from write_npz(). 
 
-        Does not load budgets from .npz unless kwargs['load_budgets'] is True. 
-
         Expects target files: 
-        At least one filename including "_budget%d"
+        One filename including "{filename}_budgets.npz"
         One filename including "_metadata.npz"
         """
 
-        budget_files = glob.glob(self.dir_name + os.sep + '*_budget*.npz')
+        # budget_files = glob.glob(self.dir_name + os.sep + '*_budget.npz')
 
         # TODO need to initialize metadata fields, establish what budgets exist, etc. 
 
         if self.verbose: 
+            print('  TODO: this did not actually do anything.')
             print('BudgetIO initialized using .npz files.')
 
 
@@ -222,6 +311,19 @@ class BudgetIO():
         if not self.associate_budget: 
             warnings.warn('write_npz(): No budgets associated! ') 
             return 
+
+        # don't unintentionally overwrite files... 
+        write_arrs = False  # this variable doesn't actually do anything
+        if not os.path.exists(filepath): 
+            write_arrs = True
+
+        elif overwrite: 
+            warnings.warn("File already exists, overwriting... ")
+            write_arrs = True
+
+        else: 
+            warnings.warn("Existing files found. Failed to write; try passing overwrite=True to override.")
+            return
         
         # declare directory to write to, default to the working directory
         if write_dir is None: 
@@ -244,18 +346,6 @@ class BudgetIO():
         for key in key_subset: 
             # TODO: We might want to crop the domain of the budgets here to reduce filesize... do that here: 
             save_arrs[key] = self.budget[key]  # only save the requested budgets
-
-        # don't unintentionally overwrite files... 
-        write_arrs = False  # there is probably a better way to do this
-        if not os.path.exists(filepath): 
-            write_arrs = True
-
-        elif overwrite: 
-            warnings.warn("File already exists, overwriting... ")
-            write_arrs = True
-
-        else: 
-            warnings.warn("Existing files found. Failed to write; try passing overwrite=True to override.")
 
         # write npz files! 
         if write_arrs: 
@@ -288,7 +378,7 @@ class BudgetIO():
         
         Arguments 
         ---------
-        budget_terms : list of terms (see ._parse_terms())
+        budget_terms : list of terms (see ._parse_budget_terms())
         mmap : default None. Sets the memory-map settings in numpy.load(). Expects None, 'r+', 'r', 'w+', 'c'
        """
 
@@ -305,8 +395,8 @@ class BudgetIO():
             self._read_budgets_npz(key_subset, mmap=mmap)
         
         self.associate_budget = True
-        if self.verbose: 
-            print("read_budget: Successfully loaded budgets. ")
+        if self.verbose and len(key_subset) > 0: 
+            print("read_budgets: Successfully loaded budgets. ")
         
 
     def _read_budgets_padeops(self, key_subset): 
@@ -369,26 +459,95 @@ class BudgetIO():
 
         elif type(budget_terms)==str: 
             warnings.warn("keyword argument budget_terms must be either 'default', 'all', or a list.")
-            return  # don't return anything
+            return {}  # empty dictionary
 
-        # figure out if budget_terms contains common form or index form
-        if all(term in BudgetIO.key for term in budget_terms): 
-            key_subset = {key: BudgetIO.key[key] for key in budget_terms}
+        # parse through terms: they are either 1) valid, 2) missing (but valid keys), or 3) invalid (not in BudgetIO.key)
+        existing_keys = self.existing_terms()
+        existing_tup = [BudgetIO.key[key] for key in existing_keys]  # corresponding associated tuples (#, #)
 
-        elif all(term in BudgetIO.key.inverse for term in budget_terms):
-            key_subset = {BudgetIO.key.inverse[key][0]: key for key in budget_terms}
+        valid_keys = [t for t in budget_terms if t in existing_keys]
+        missing_keys = [t for t in budget_terms if t not in existing_keys and t in BudgetIO.key]
+        invalid_terms = [t for t in budget_terms if t not in BudgetIO.key and t not in BudgetIO.key.inverse]
 
-        else: 
-            warnings.warn('Requested invalid budget terms.')
-            if self.verbose: 
-                print("Could not find the following terms: ", 
-                [term for term in budget_terms if term not in BudgetIO.key])
-                print("Or, if searching key.inverse, the following terms could not be found: ", 
-                [term for term in budget_terms if term not in BudgetIO.key.inverse])
+        valid_tup = [tup for tup in budget_terms if tup in existing_tup]  # existing tuples
+        missing_tup = [tup for tup in budget_terms if tup not in existing_tup and tup in BudgetIO.key.inverse]
 
-        # TODO: Throw an exception if requested budgets do not exist!! 
+        # now combine existing valid keys and valid tuples, removing any duplicates
+
+        valid_terms = set(valid_keys + [BudgetIO.key.inverse[tup][0] for tup in valid_tup])  # combine and remove duplicates
+        missing_terms = set(missing_keys + [BudgetIO.key.inverse[tup][0] for tup in missing_tup])
+
+        # generate the key
+        key_subset = {key: BudgetIO.key[key] for key in valid_terms}
+
+        # warn the user if some requested terms did not exist
+
+        if len(key_subset) == 0: 
+            warnings.warn('_parse_budget_terms(): No keys being returned; none matched.')
+
+        if len(missing_terms) > 0: 
+            warnings.warn('_parse_budget_terms(): Several terms were requested but could not be found: {}'.format(missing_terms))
+
+        if len(invalid_terms) > 0: 
+            warnings.warn('_parse_budget_terms(): The following budget terms were requested but do not exist: {}'.format(invalid_terms))
 
         return key_subset 
+
+
+    def _get_inflow(self, offline=False, wInflow=False): 
+        """
+        Calls the appropriate functions in inflow.py to retrieve the inflow profile for the corresponding flow. 
+
+        Arguments
+        ---------
+        offline (bool) : if True, uses the target inflow profile prescribed by initialize.F90. Default (False) reads
+            the inflow profile from the first x-index of the domain and average over y. 
+        wInflow (bool) : if True, returns an array of w-inflow velocities. Default (False) only returns u, v. 
+        
+        Returns
+        -------
+        u (array) : [nz x 1] array of u-velocities as a function of height
+        v (array) : [nz x 1] array of v-velocities as a function of height
+        w (array) : [nz x 1] array of w-velocities as a function of height. Nominally this is all zero. 
+
+        """
+        
+        # load using InflowParser: 
+
+        if input: 
+            if self.associate_nml: 
+                u, v = inflow.InflowParser.inflow_offline()
+            
+            # reading from the budgets
+            if input: 
+                warnings.warn('_get_inflow: Requested offline inflow, but namelist not associated. Trying online.')
+                u, v = inflow.InflowParser.inflow_budgets(self)
+                
+        else: 
+            u, v = inflow.InflowParser.inflow_budgets(self) 
+
+        # return requested information 
+
+        if wInflow: 
+            # If this is not nominally zero, then this will need to be fixed. 
+            w = np.zeros(self.zLine.shape)
+            return u, v, w
+
+        else: 
+            return u, v
+
+    
+    def calc_wake(self, offline=False, wInflow=False):
+        """
+        Computes the wake deficit by subtracting the target inflow from the flow field. 
+
+        Arguments
+        ---------
+        see _get_inflow()
+
+        Returns
+        -------
+        """ 
 
 
     def unique_tidx(self): 
