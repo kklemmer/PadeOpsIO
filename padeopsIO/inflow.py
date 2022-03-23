@@ -45,6 +45,8 @@ class InflowParser():
         NameError if insufficient or incompatible input arguments
         
         """        
+        
+        print(kwargs)
 
         # check keyword arguments
         if 'zLine' in kwargs: 
@@ -52,19 +54,21 @@ class InflowParser():
         else: 
             warnings.warn('InflowParser.inflow_offline(): No z-coordinates specified!')
             return
-
+                
         # because not all the profiles need all these variables, try to parse variables individually
         # may throw NameError if a required variable is not provided
-        if 'InflowProfileType' in kwargs: 
-            InflowProfileType = kwargs['InflowProfileType']
-        if 'InflowProfileThick' in kwargs: 
-            InflowProfileThick = kwargs['InflowProfileThick']
-        if 'InflowProfileAmplit' in kwargs: 
-            InflowProfileAmplit = kwargs['InflowProfileAmplit']
-        if 'uInflow' in kwargs: 
-            uInflow = kwargs['uInflow']
-        if 'vInflow' in kwargs: 
-            vInflow = kwargs['vInflow']
+        
+        # have been having trouble with case-sensivity on kwargs: 
+        if 'inflowprofiletype' in kwargs: 
+            InflowProfileType = kwargs['inflowprofiletype']
+        if 'inflowprofilethick' in kwargs: 
+            InflowProfileThick = kwargs['inflowprofilethick']
+        if 'inflowprofileamplit' in kwargs: 
+            InflowProfileAmplit = kwargs['inflowprofileamplit']
+        if 'uinflow' in kwargs: 
+            uInflow = kwargs['uinflow']
+        if 'vinflow' in kwargs: 
+            vInflow = kwargs['vinflow']
         
         if 'buffer' in kwargs: 
             buffer = kwargs['buffer']
@@ -113,7 +117,7 @@ class InflowParser():
             v = vInflow*(zMid-zLine)/InflowProfileThick
 
         elif InflowProfileType == 6: 
-            # 6: piecewise linear veered inflow
+            # 6: piecewise linear veered inflow            
             alpha = (zMid-zLine)/InflowProfileThick*vInflow
             a_max = np.pi/2*buffer
             alpha[alpha>a_max] = a_max
