@@ -1,3 +1,4 @@
+from asyncio import format_helpers
 from tkinter import W
 import numpy as np
 import os
@@ -174,7 +175,7 @@ class BudgetIO():
         """
         
         if f90nml is None: 
-            warnings.warn('_raed_inputfile(): No namelist reader loaded. ')
+            warnings.warn('_read_inputfile(): No namelist reader loaded. ')
             return
 
         inputfile_ls = []  
@@ -291,13 +292,18 @@ class BudgetIO():
         
         # load metadata: expects a file named <filename>_metadata.npy
         
-        self.input_nml = np.load(self.dir_name + os.sep + self.filename + '_metadata.npy').item()
+        try: 
+            self.input_nml = np.load(self.dir_name + os.sep + self.filename + '_metadata.npy').item()
+        except FileNotFoundError as e: 
+            print(e)
+            return
+
         self.associate_nml = True
         
         self._convenience_variables()  # also loads the grid
         
         if self.verbose: 
-            print('BudgetIO initialized using .npz files.')
+            print('_init_npz(): BudgetIO initialized using .npz files.')
 
 
     def set_filename(self, filename): 
@@ -382,14 +388,14 @@ class BudgetIO():
         # write npz files! 
         if write_arrs: 
             np.savez(filepath, **save_arrs)
-            self._write_metadata(write_dir)  # TODO
+            self.write_metadata(write_dir)  # TODO
             
             if self.verbose: 
                 print("write_npz: Successfully saved the following budgets: ", list(key_subset))
                 print("at " + filepath)
         
         
-    def _write_metadata(self, write_dir): 
+    def write_metadata(self, write_dir): 
         """
         The saved budgets aren't useful on their own unless we also save some information like the mesh
         used in the simulation and some other information like the last timestep. That goes here. 
@@ -411,17 +417,41 @@ class BudgetIO():
         np.save(filename, meta)
         
         if self.verbose: 
-            print('_write_metadata(): metadata written to {}'.format(filename))
+            print('write_metadata(): metadata written to {}'.format(filename))
         
 
-    def _read_metadata(self): 
+    def read_metadata(self): 
         """
-        Reads the saved .npy written in _write_metadata(). 
+        Reads the saved .npy written in write_metadata(). 
         """
-        pass  # TODO
+        # a rather boring function...
+        self._init_npz()
 
     
-    def read_budgets(self, budget_terms='default', mmap=None): 
+    def clear_budgets(self): 
+        """
+        Clears any loaded budgets. 
+
+        Returns
+        -------
+        keys (list) : list of cleared budgets. 
+        """
+        if not self.associate_budget: 
+            if self.verbose: 
+                print('clear_budgets(): no budgets to clear. ')
+            return
+        
+        loaded_keys = self.budget.keys()
+        self.budget = {}  # empty dictionary
+        self.associate_budget = False
+
+        if self.verbose: 
+            print('clear_budgets(): Cleared loaded budgets: {}'.format(loaded_keys))
+        
+        return loaded_keys
+
+    
+    def read_budgets(self, budget_terms='default', mmap=None, overwrite=False): 
         """
         Accompanying method to write_budgets. Reads budgets saved as .npz files 
         
@@ -429,13 +459,20 @@ class BudgetIO():
         ---------
         budget_terms : list of terms (see ._parse_budget_terms())
         mmap : default None. Sets the memory-map settings in numpy.load(). Expects None, 'r+', 'r', 'w+', 'c'
+        overwrite (bool) : if True, re-loads budgets that have already been loaded. Default False; checks  
+            existing budgets before loading new ones. 
        """
-
-        # need to parse budget_terms with the key
+        # parse budget_terms with the key
         key_subset = self._parse_budget_terms(budget_terms)
 
-        # TODO - if a) budgets are already loaded, or 
-        #           b) requested budgets do not exist, then we need to remove these from the list.  # this is done :)
+        if not overwrite:
+            remove_keys = [key for key in key_subset if key in self.budget.keys()]
+            if len(remove_keys) > 0 and self.verbose: 
+                print("read_budgets(): requested budgets that have already been loaded. \
+                    \n  Removed the following: {}. Pass overwrite=True to read budgets anyway.".format(remove_keys))
+            
+            # remove items that have already been loaded in  
+            key_subset = {key:key_subset[key] for key in key_subset if key not in self.budget.keys()}
 
         if self.associate_padeops: 
             self._read_budgets_padeops(key_subset)
@@ -455,7 +492,7 @@ class BudgetIO():
         tidx = self.last_tidx 
         n = self.last_n
 
-        # TODO - this needs testing
+        # these lines are almost verbatim from PadeOpsViz.py
         for key in key_subset:
             budget, term = BudgetIO.key[key]
             u_fname = self.dir_name + '/Run' + '{:02d}'.format(self.runid) + '_budget' + '{:01d}'.format(budget) + \
