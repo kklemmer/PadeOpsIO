@@ -1,5 +1,3 @@
-from asyncio import format_helpers
-from tkinter import W
 import numpy as np
 import os
 import re
@@ -292,8 +290,9 @@ class BudgetIO():
         
         # load metadata: expects a file named <filename>_metadata.npy
         
+        filepath = self.dir_name + os.sep + self.filename + '_metadata.npy'
         try: 
-            self.input_nml = np.load(self.dir_name + os.sep + self.filename + '_metadata.npy').item()
+            self.input_nml = np.load(filepath, allow_pickle=True).item()
         except FileNotFoundError as e: 
             print(e)
             return
@@ -586,6 +585,8 @@ class BudgetIO():
             warnings.warn('_parse_budget_terms(): The following budget terms were requested but the following do not exist: \
                 {}'.format(invalid_terms))
 
+        # TODO - fix warning messages for the wakes
+
         return key_subset 
 
 
@@ -636,6 +637,7 @@ class BudgetIO():
     def calc_wake(self, offline=False, wInflow=False, overwrite=False):
         """
         Computes the wake deficit by subtracting the target inflow from the flow field. 
+        # TODO - right now this must compute at minimum uwake and vwake. Fix?  
 
         Arguments
         ---------
