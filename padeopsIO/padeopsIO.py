@@ -703,12 +703,20 @@ class BudgetIO():
         slices = {}  # build from empty dict
 
         for term in budget_terms: 
-            slices[term] = self.budget[term][xid, yid, zid]
+            slices[term] = np.squeeze(self.budget[term][xid, yid, zid])  
         
         # also save domain information
         slices['x'] = self.xLine[xid]
         slices['y'] = self.yLine[yid]
         slices['z'] = self.zLine[zid]
+        
+        # build and save the extents, either in 1D, 2D, or 3D
+        ext = []
+        for term in ['x', 'y', 'z']: 
+            if len(slices[term]) > 1:  # if this is actually a slice (not a number), then add it to the extents
+                ext += [np.min(slices[term]), np.max(slices[term])]
+        
+        slices['extent'] = ext
 
         return slices
 
@@ -750,12 +758,14 @@ class BudgetIO():
                 
                 if return_slice:  # append slices to the return tuple
                     ret = ret + (slice(np.min(xids), np.max(xids)+1), )
+                    
                 else:  # append index list to the return tuple
                     ret = ret + (xids, )
             
             elif return_none:  # fill with None or slice(None)
                 if return_slice: 
                     ret = ret + (slice(None), )
+                    
                 else: 
                     ret = ret + (None, )
         
