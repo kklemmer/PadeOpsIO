@@ -462,6 +462,11 @@ class BudgetIO():
         overwrite (bool) : if True, re-loads budgets that have already been loaded. Default False; checks  
             existing budgets before loading new ones. 
        """
+
+        # we need to handle computed quantities differently... 
+        if any(t in ['uwake', 'vwake', 'wwake'] for t in budget_terms): 
+            self.calc_wake()
+
         # parse budget_terms with the key
         key_subset = self._parse_budget_terms(budget_terms)
 
@@ -501,7 +506,7 @@ class BudgetIO():
             temp = np.fromfile(u_fname, dtype=np.dtype(np.float64), count=-1)
             self.budget[key] = temp.reshape((self.nx,self.ny,self.nz), order='F')  # reshape into a 3D array
 
-        if self.verbose: 
+        if self.verbose and len(key_subset) > 0: 
             print('PadeOpsViz loaded the budget fields at time:' + '{:.06f}'.format(tidx))
 
 
