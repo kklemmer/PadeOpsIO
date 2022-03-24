@@ -644,18 +644,16 @@ class BudgetIO():
         """ 
 
         target_terms = ['uwake', 'vwake']
+        req_terms = ['ubar', 'vbar']  # required budget terms
         if wInflow: 
             target_terms.append('wwake')
+            req_terms.append('wbar') # might also need w
 
         # check to see if the terms exist already
         if all(t in self.budget.keys() for t in target_terms): 
             if not overwrite: 
                 warnings.warn('Wake terms already computed, returning. To compute anyway, use keyword overwrite=True')
                 return
-
-        req_terms = ['ubar', 'vbar']  # required budget terms
-        if wInflow: 
-            req_terms.append('wbar') # might also need w
         
         # Need mean velocity fields to be loaded
         if not all(t in self.budget.keys() for t in req_terms): 
@@ -675,6 +673,92 @@ class BudgetIO():
         if self.verbose: 
             print("calc_wake(): Computed wake velocities. ")
 
+    
+    def slice(self, budget_terms, xlim=None, ylim=None, zlim=None): 
+        """
+        Returns a slice of the requested budget term(s) as a dictionary. 
+
+        Arguments
+        ---------
+        budget_terms (list or string) : budget term or terms to slice from. 
+        xlim, ylim, zlim (tuple) : in physical domain coordinates, the slice limits. If an integer is given, then the 
+            dimension of the slice will be reduced by one. If None is given (default), then the entire domain extent is sliced. 
+
+        Returns
+        -------
+        slices (dict) : dictionary organized with all of the sliced fields, keyed by the budget name, and additional keys for
+            the slice domain 'x', 'y', and 'z'
+        
+        """
+        # read budgets
+        self.read_budgets(budget_terms=budget_terms)
+
+        xid, yid, zid = self.get_xids(x=xlim, y=ylim, z=zlim, return_none=True, return_slice=True)
+
+        slices = {}  # build from empty dict
+
+        for term in budget_terms: 
+            slices[term] = self.budget[term][xid, yid, zid]
+        
+        # also save domain information
+        slices['x'] = self.xLine[xid]
+        slices['y'] = self.yLine[yid]
+        slices['z'] = self.zLine[zid]
+
+        return slices
+
+
+    def get_xids(self, x=None, y=None, z=None, return_none=False, return_slice=False): 
+        """
+        Translates x, y, and z limits in the physical domain to indices based on self.xLine, self.yLine, and self.zLine
+
+        Arguments
+        ---------
+        x, y, z : float or iterable (tuple, list, etc.) of physical locations to return the nearest index for
+        return_none : if True, populates output tuple with None if input is None. Default False. 
+        return_slice : if True, returns a tuple of slices instead a tuple of lists. 
+
+        Returns
+        -------
+        xid, yid, zid : list or tuple of lists with indices for the requested x, y, z, args in the order: x, y, z. 
+            If, for example, y and z are requested, then the returned tuple will have (yid, zid) lists. 
+            If only one value (float or int) is passed in for e.g. x, then an integer will be passed back in xid. 
+        """
+
+        if not self.associate_grid: 
+            raise(AttributeError('No grid associated. '))
+
+        # set up this way in case we want to introduce an offset later on (i.e. turbine-centered coordinates)
+        x_ax = self.xLine  # - offset_x  # TODO? 
+        y_ax = self.yLine
+        z_ax = self.zLine
+
+        ret = ()
+
+        # iterate through x, y, z, index matching for each term
+        for s, s_ax in zip([x, y, z], [x_ax, y_ax, z_ax]): 
+            if s is not None: 
+                if hasattr(s, '__iter__'): 
+                    xids = [np.argmin(np.abs(s_ax-xval)) for xval in s]
+                else: 
+                    xids = np.argmin(np.abs(s_ax-s))
+                
+                if return_slice:  # append slices to the return tuple
+                    ret = ret + (slice(np.min(xids), np.max(xids)+1), )
+                else:  # append index list to the return tuple
+                    ret = ret + (xids, )
+            
+            elif return_none:  # fill with None or slice(None)
+                if return_slice: 
+                    ret = ret + (slice(None), )
+                else: 
+                    ret = ret + (None, )
+        
+        if len(ret)==1: 
+            return ret[0]  # don't return a length one tuple 
+        else: 
+            return ret
+    
 
     def unique_tidx(self): 
         """
