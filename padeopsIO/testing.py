@@ -6,7 +6,8 @@ import numpy as np
 from padeopsIO import BudgetIO
 
 # testIO = BudgetIO('some_dir', verbose=False)
-testIO = BudgetIO(r'./test_data', Lx=1, Ly=1, Lz=1, runid=1, verbose=True)
+dir_name = r'/scratch/08445/tg877441/AD_coriolis_shear/new_geostrophic/r1s0v1' 
+testIO = BudgetIO(dir_name, Lx=50, Ly=20, Lz=10, runid=1, verbose=True)
 
 budgets = testIO.existing_budgets()
 testIO.existing_terms(budgets[0])
