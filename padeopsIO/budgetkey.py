@@ -129,37 +129,37 @@ def key_labels():
         'vv': "$\\overline{v'v'}/U^2$",
         'vw': "$\\overline{v'w'}/U^2$",
         'ww': "$\\overline{w'w'}/U^2$",
-        'pbar': (0, 10), 
-        'tau11': (0, 11), 
-        'tau12': (0, 12), 
-        'tau13': (0, 13), 
-        'tau22': (0, 14), 
-        'tau23': (0, 15), 
-        'tau33': (0, 16), 
-        'pu': (0, 17), 
-        'pv': (0, 18), 
-        'pw': (0, 19), 
-        'uk': (0, 20), 
-        'vk': (0, 21), 
-        'wk': (0, 22), 
+        'pbar': "$\\bar{p}$, 
+        'tau11': "$\\tau_{11}$, 
+        'tau12': "$\\tau_{12}$, 
+        'tau13': "$\\tau_{13}$, 
+        'tau22': "$\\tau_{22}$, 
+        'tau23': "$\\tau_{23}$, 
+        'tau33': "$\\tau_{33}$, 
+        'pu': "$\\overline{p'u'}$", 
+        'pv': "$\\overline{p'v'}$", 
+        'pw': "$\\overline{p'w'}$", 
+        'uk': "$\\overline{k'u'}$", 
+        'vk': "$\\overline{k'v'}$", 
+        'wk': "$\\overline{k'w'}$", 
         'ujtau1j': (0, 23), 
         'ujtau2j': (0, 24), 
         'ujtau3j': (0, 25), 
-        'Tbar': (0, 26), 
-        'uT': (0, 27), 
-        'vT': (0, 28), 
-        'wT': (0, 29), 
-        'TT': (0, 30), 
+        'Tbar': "$\\bar{T}$, 
+        'uT': "$\\overline{T'u'}$", 
+        'vT': "$\\overline{T'v'}$", 
+        'wT': "$\\overline{T'w'}$", 
+        'TT': "$\\overline{T'T'}$", 
         # BUDGET 1 TERMS: (momentum)
-        'DuDt': (1, 1),  # x-advection
-        'dpdx': (1, 2),  # x-pressure gradient
+        'DuDt': "$Du/Dt$",  # x-advection
+        'dpdx': "$\\partial p/\\partial x$",  # x-pressure gradient
         'xSGS': (1, 3),  # x-sub grid stresses
         'xAD': (1, 4),   # x-Actuator disk
-        'DvDt': (1, 5),  
-        'dpdy': (1, 6), 
+        'DvDt': "$Dv/Dt$",  
+        'dpdy': "$\\partial p/\\partial y$", 
         'ySGS': (1, 7), 
-        'DwDt': (1, 8), 
-        'dpdz': (1, 9), 
+        'DwDt': "$Dw/Dt$", 
+        'dpdz': "$\\partial p/\\partial z$", 
         'zSGS': (1, 10),
         'xCor': (1, 11), # x-coriolis
         'xGeo': (1, 12), # x-geostrophic pressure grad. 
@@ -190,7 +190,12 @@ def key_labels():
         # BUDGET 5 TERMS: Wake deficit
         'uwake': "$\\Delta u_{wake}$",
         'vwake': "$\\Delta v_{wake}$",
-        'wwake': "$\\Delta w_{wake}$"
+        'wwake': "$\\Delta w_{wake}$", 
+        # SPATIAL COORDINATES
+        'x': "$x$", 
+        'y': "$y$", 
+        'z': "$z$", 
+        't': "$t$"
         }
     
     return key

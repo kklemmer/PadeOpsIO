@@ -6,7 +6,7 @@ import sys
 from padeopsIO import BudgetIO  # this may be unnecessary 
 import budgetkey
 
-class PlotsIO(): 
+class PlotIO(): 
     """
     Interface class for plotting and saving figures using a BudgetIO object. 
     """
@@ -27,7 +27,7 @@ class PlotsIO():
         """
         Sets the font size
         """
-        PlotsIO.fs = fontsize
+        PlotIO.fs = fontsize
         plt.rcParams.update({'font.size': fontsize})
 
 
@@ -43,10 +43,10 @@ class PlotsIO():
 
             # fig.colorbar(im)
             cb = common_cbar(fig, im, ax)
-            cb.set_label(PlotsIO.keylab[term])
+            cb.set_label(PlotIO.keylab[term])
 
-            ax.set_xlabel(PlotsIO.x_lab)
-            ax.set_ylabel(PlotsIO.y_lab)
+            ax.set_xlabel(PlotIO.x_lab)
+            ax.set_ylabel(PlotIO.y_lab)
 
             plt.show()
 
