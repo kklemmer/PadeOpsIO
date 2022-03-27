@@ -3,8 +3,7 @@ import numpy as np
 import os
 import sys
 
-from padeopsIO import BudgetIO  # this may be unnecessary 
-import budgetkey
+import padeopsIO.budgetkey as budgetkey
 
 class PlotIO(): 
     """
