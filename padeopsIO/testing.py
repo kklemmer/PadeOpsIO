@@ -3,14 +3,12 @@ import sys
 import numpy as np
 
 # sys.path.append(r'./padeops_io/')  # why is this our cwd? 
-from padeopsIO import BudgetIO
-from inflow import InflowParser
-from padeplots import PlotsIO
+import padeopsIO as pio
 
 # testIO = BudgetIO('some_dir', verbose=False)
-testIO = BudgetIO(r'./test_data', verbose=True)
+testIO = pio.BudgetIO(r'./test_data', verbose=True)
 
-PlotsIO.xy_slice(testIO, ['ubar', 'uwake'], z=5)
+pio.PlotsIO.xy_slice(testIO, ['ubar', 'uwake'], z=5)
 
 budgets = testIO.existing_budgets()
 testIO.existing_terms(budgets[0])
