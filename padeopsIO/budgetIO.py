@@ -84,6 +84,7 @@ class BudgetIO():
         self.associate_nml = False
         self.associate_budget = False
         self.associate_grid = False
+        self.associate_field = False
 
         if all(x in kwargs for x in ['runid', 'Lx', 'Ly', 'Lz']) or ('padeops' in kwargs): 
             try: 
@@ -146,7 +147,7 @@ class BudgetIO():
         
         # TODO this may all be in the input file. 
         
-        info_fname = self.dir_name + '/Run' + '{:02d}'.format(self.runid) + '_info_t' + '{:06d}'.format(self.tidx) + '.out'
+        info_fname = self.dir_name + '/Run{:02d}_info_t{:06d}.out'.format(self.runid, self.tidx)
         self.info = np.genfromtxt(info_fname, dtype=None)
         self.time = self.info[0]
         
@@ -161,8 +162,16 @@ class BudgetIO():
         if self.verbose: 
             print('BudgetIO initialized using info files at time:' + '{:.06f}'.format(self.time))
 
-        self.last_tidx = self.last_budget_tidx()  # last tidx in the run with budgets
+        self.last_tidx = self.unique_budget_tidx()  # last tidx in the run with budgets
         self.last_n = self.last_budget_n()  # last tidx with an associated budget
+        
+        # The following are initialized as the final saved instanteous field and budget: 
+        self.field = {}
+        self.field_tidx = self.last_tidx
+        
+        self.all_budget_tidx = self.unique_budget_tidx(all_tidx=True)
+        self.budget_tidx = self.last_tidx  # but may be changed by the user
+        self.budget_n = self.last_n
 
     
     def _read_inputfile(self, **kwargs): 
@@ -206,8 +215,11 @@ class BudgetIO():
         self.associate_nml = True  # successfully loaded input file
         
         # BUDGET VARIABLES: 
-        self.last_tidx = self.last_budget_tidx()
-        self.last_n = self.last_budget_n() 
+        
+        # TODO - fix this in the metadata
+        
+#         self.last_tidx = self.unique_budget_tidx()
+#         self.last_n = self.last_budget_n() 
 
         
     def _convenience_variables(self): 
@@ -272,7 +284,7 @@ class BudgetIO():
         self.associate_grid = True
 
 
-    def _init_npz(self, **kwargs): 
+    def _init_npz(self): 
         """
         Initializes the BudgetIO object by attempting to read .npz files saved from a previous BudgetIO object 
         from write_npz(). 
@@ -425,8 +437,56 @@ class BudgetIO():
         """
         # a rather boring function...
         self._init_npz()
-
-    
+     
+            
+    def read_fields(self, field_terms=None, tidx=None): 
+        """
+        Reads fields from PadeOps output files into the self.field dictionary. 
+        
+        Parameters
+        ----------
+        field_terms (list) : list of field terms to read, must be be limited to: 
+            'u', 'v', 'w', 'p'
+        tidx (int) : reads fields from the specified time ID. Default: self.last_tidx 
+        
+        Returns
+        -------
+        None
+        
+        """
+        
+        dict_match = {'u':'uVel', 
+                      'v':'vVel', 
+                      'w':'wVel', 
+                      'p':'prss'}  # add more? 
+        
+        # parse terms: 
+        if field_terms is None: 
+            terms = dict_match.keys()
+            
+        else: 
+            terms = [t for t in field_terms if t in dict_match.keys()]
+        
+        # parse tidx
+        if tidx is None: 
+            tidx = self.last_tidx
+        
+        # the following is very similar to PadeOpsViz.ReadVelocities()
+        
+        for term in terms: 
+            info_fname = self.dir_name + '/Run{:02d}_info_t{:06d}.out'.format(self.runid, tidx)
+            info = np.genfromtxt(info_fname, dtype=None)
+            self.time = info[0]  # update time field
+            
+            fname = self.dir_name + '/Run{:02d}_{:s}_t{:06d}.out'.format(self.runid, dict_match[term], tidx)
+            tmp = np.fromfile(fname, dtype=np.dtype(np.float64), count=-1)
+            self.field[term] = tmp.reshape((self.nx,self.ny,self.nz), order='F')  # reshape into a 3D array
+            
+        self.associate_field = True
+            
+        print('BudgetIO loaded fields {:s} at time: {:.06f}'.format(str(list(terms)), self.time))
+        
+        
     def clear_budgets(self): 
         """
         Clears any loaded budgets. 
@@ -450,7 +510,7 @@ class BudgetIO():
         return loaded_keys
 
     
-    def read_budgets(self, budget_terms='default', mmap=None, overwrite=False): 
+    def read_budgets(self, budget_terms='default', mmap=None, overwrite=False, tidx=None): 
         """
         Accompanying method to write_budgets. Reads budgets saved as .npz files 
         
@@ -460,6 +520,8 @@ class BudgetIO():
         mmap : default None. Sets the memory-map settings in numpy.load(). Expects None, 'r+', 'r', 'w+', 'c'
         overwrite (bool) : if True, re-loads budgets that have already been loaded. Default False; checks  
             existing budgets before loading new ones. 
+        tidx (int) : if given, requests budget dumps at a specific time ID. Default None. This only affects
+            reading from PadeOps output files; .npz are limited to one saved tidx. 
        """
 
         # we need to handle computed quantities differently... 
@@ -479,7 +541,7 @@ class BudgetIO():
             key_subset = {key:key_subset[key] for key in key_subset if key not in self.budget.keys()}
 
         if self.associate_padeops: 
-            self._read_budgets_padeops(key_subset)
+            self._read_budgets_padeops(key_subset, tidx=tidx)
         
         elif self.associate_npz: 
             self._read_budgets_npz(key_subset, mmap=mmap)
@@ -489,18 +551,38 @@ class BudgetIO():
             print("read_budgets: Successfully loaded budgets. ")
         
 
-    def _read_budgets_padeops(self, key_subset): 
+    def _read_budgets_padeops(self, key_subset, tidx): 
         """
         Uses a method similar to ReadVelocities_Budget() in PadeOpsViz to read and store full-field budget terms. 
         """
-        tidx = self.last_tidx 
-        n = self.last_n
+        
+        if tidx is None: 
+            tidx = self.last_tidx
+            
+        elif tidx not in self.all_budget_tidx: 
+            # find the nearest that actually exists
+            tidx_arr = np.array(self.all_budget_tidx)
+            closest_tidx = tidx_arr[np.argmin(np.abs(tidx_arr-tidx))]
+            
+            print("Requested budget tidx={:d} could not be found. Using tidx={:d} instead.".format(tidx, closest_tidx))
+            tidx = closest_tidx 
+            
+        # update self.time and self.tidx: 
+        self.tidx = tidx
+        
+        info_fname = self.dir_name + '/Run{:02d}_info_t{:06d}.out'.format(self.runid, self.tidx)
+        self.info = np.genfromtxt(info_fname, dtype=None)
+        self.time = self.info[0]
 
         # these lines are almost verbatim from PadeOpsViz.py
         for key in key_subset:
             budget, term = BudgetIO.key[key]
-            u_fname = self.dir_name + '/Run' + '{:02d}'.format(self.runid) + '_budget' + '{:01d}'.format(budget) + \
-                '_term' + '{:02d}'.format(term) + '_t' + '{:06d}'.format(tidx) + '_n' + '{:06d}'.format(n) + '.s3D'
+            
+            searchstr =  self.dir_name + '/Run{:02d}_budget{:01d}_term{:02d}_t{:06d}_*.s3D'.format(self.runid, budget, term, tidx)
+            u_fname = glob.glob(searchstr)[0]  
+            
+            self.budget_n = int(re.findall('.*_t\d+_n(\d+)', u_fname)[0])  # extract n from string
+            self.budget_tidx = tidx
             
             temp = np.fromfile(u_fname, dtype=np.dtype(np.float64), count=-1)
             self.budget[key] = temp.reshape((self.nx,self.ny,self.nz), order='F')  # reshape into a 3D array
@@ -681,16 +763,18 @@ class BudgetIO():
             print("calc_wake(): Computed wake velocities. ")
 
     
-    def slice(self, budget_terms, xlim=None, ylim=None, zlim=None): 
+    def slice(self, budget_terms, tidx=None, xlim=None, ylim=None, zlim=None, overwrite=True): 
         """
         Returns a slice of the requested budget term(s) as a dictionary. 
 
         Arguments
         ---------
         budget_terms (list or string) : budget term or terms to slice from. 
+        tidx (int) : time ID to read budgets from, see read_budgets(). Default None
         xlim, ylim, zlim (tuple) : in physical domain coordinates, the slice limits. If an integer is given, then the 
             dimension of the slice will be reduced by one. If None is given (default), then the entire domain extent is sliced. 
-
+        overwrite (bool) : Overwrites loaded budgets, see read_budgets(). Default True
+        
         Returns
         -------
         slices (dict) : dictionary organized with all of the sliced fields, keyed by the budget name, and additional keys for
@@ -698,7 +782,7 @@ class BudgetIO():
         
         """
         # read budgets
-        self.read_budgets(budget_terms=budget_terms)
+        self.read_budgets(budget_terms=budget_terms, tidx=tidx, overwrite=overwrite)
 
         xid, yid, zid = self.get_xids(x=xlim, y=ylim, z=zlim, return_none=True, return_slice=True)
 
@@ -792,12 +876,16 @@ class BudgetIO():
         # searches for the formatting *_t(\d+)* in all filenames
         t_list = [int(re.findall('Run{:02d}.*_t(\d+).*'.format(runid), name)[0]) 
                   for name in filenames if re.findall('Run{:02d}.*_t(\d+).*'.format(runid), name)]
-        return np.unique(np.array(t_list))
+        return np.unique(t_list)
 
     
-    def last_budget_tidx(self): 
+    def unique_budget_tidx(self, all_tidx=False): 
         """
         Pulls all the unique tidx values from a directory. 
+        
+        Parameters
+        ----------
+        all_tidx (bool) : if True, returns an entire list of unique tidx associated with budgets. Default False
         """
 
         # TODO: fix for .npz
@@ -809,7 +897,11 @@ class BudgetIO():
         # searches for the formatting *_t(\d+)* in budget filenames
         t_list = [int(re.findall('Run{:02d}.*budget.*_t(\d+).*'.format(runid), name)[0]) 
                   for name in filenames if re.findall('Run{:02d}.*budget.*_t(\d+).*'.format(runid), name)]
-        return np.max(t_list)
+        
+        if all_tidx: 
+            return np.unique(t_list)
+        else: 
+            return np.max(t_list)
 
     
     def last_budget_n(self): 
