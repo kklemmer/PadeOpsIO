@@ -14,14 +14,12 @@ except ImportError:
 import padeopsIO.budgetkey as budgetkey  # defines key pairing
 import padeopsIO.inflow as inflow  # interface to retrieve inflow profiles
 
-
 class BudgetIO(): 
     """
     # TODO fix class docstring
     """
 
     key = budgetkey.get_key()
-    
 
     def __init__(self, dir_name, **kwargs):  # outputdir_name, runid=1, tidx=0, Lx=256, Ly=256, Lz=128): 
         """
@@ -204,6 +202,10 @@ class BudgetIO():
             warnings.warn('_read_inputfile(): Multiple files ending in *.dat found')
             if self.verbose: 
                 print("    Found the following files:", inputfile_ls)
+        
+        # if there are still no input files found, we've got a problem 
+        # TODO: fix this
+        # TODO: trim dir_name() to remove trailing spaces
         
         if self.verbose: 
             print("Reading namelist file from {}".format(inputfile_ls[0]))
@@ -694,7 +696,7 @@ class BudgetIO():
 
         if offline: 
             if self.associate_nml: 
-                print(dict(self.input_nml['AD_coriolisinput']))
+#                 print(dict(self.input_nml['AD_coriolisinput']))
                 u, v = inflow.InflowParser.inflow_offline(**dict(self.input_nml['AD_coriolisinput']), zLine=self.zLine)
             
             # reading from the budgets
@@ -710,10 +712,10 @@ class BudgetIO():
         if wInflow: 
             # If this is not nominally zero, then this will need to be fixed. 
             w = np.zeros(self.zLine.shape)
-            return u, v, w
+            return np.array([u, v, w])
 
         else: 
-            return u, v
+            return np.array([u, v])
 
     
     def calc_wake(self, offline=False, wInflow=False, overwrite=False):
@@ -763,13 +765,14 @@ class BudgetIO():
             print("calc_wake(): Computed wake velocities. ")
 
     
-    def slice(self, budget_terms, tidx=None, xlim=None, ylim=None, zlim=None, overwrite=True): 
+    def slice(self, budget_terms=None, field=None, tidx=None, xlim=None, ylim=None, zlim=None, overwrite=True): 
         """
         Returns a slice of the requested budget term(s) as a dictionary. 
 
         Arguments
         ---------
-        budget_terms (list or string) : budget term or terms to slice from. 
+        budget_terms (list or string) : budget term or terms to slice from. If None, expects a value for `field`
+        field (arraylike or dict of arraylike) : fields similar to self.budget[]
         tidx (int) : time ID to read budgets from, see read_budgets(). Default None
         xlim, ylim, zlim (tuple) : in physical domain coordinates, the slice limits. If an integer is given, then the 
             dimension of the slice will be reduced by one. If None is given (default), then the entire domain extent is sliced. 
@@ -781,15 +784,31 @@ class BudgetIO():
             the slice domain 'x', 'y', and 'z'
         
         """
-        # read budgets
-        self.read_budgets(budget_terms=budget_terms, tidx=tidx, overwrite=overwrite)
 
         xid, yid, zid = self.get_xids(x=xlim, y=ylim, z=zlim, return_none=True, return_slice=True)
 
         slices = {}  # build from empty dict
+        
+        if field is not None: 
+            # slice the given field
+            
+            if type(field) == dict: 
+                # iterate through dictionary of fields
+                for key in field.keys(): 
+                    slices[key] = np.squeeze(field[key][xid, yid, zid])
+            else: 
+                slices['field'] = np.squeeze(field[xid, yid, zid])
+                
+        elif budget_terms is not None: 
+            # read budgets
+            self.read_budgets(budget_terms=budget_terms, tidx=tidx, overwrite=overwrite)
 
-        for term in budget_terms: 
-            slices[term] = np.squeeze(self.budget[term][xid, yid, zid])  
+            for term in budget_terms: 
+                slices[term] = np.squeeze(self.budget[term][xid, yid, zid])  
+                
+        else: 
+            warnings.warn("BudgetIO.slice(): either budget_terms= or field= must be initialized.")
+            return None
         
         # also save domain information
         slices['x'] = self.xLine[xid]
@@ -861,7 +880,7 @@ class BudgetIO():
             return ret
     
 
-    def unique_tidx(self): 
+    def unique_tidx(self, firstlast=None): 
         """
         Pulls all the unique tidx values from a directory. 
         """
@@ -1017,6 +1036,132 @@ class BudgetIO():
             return []
         
         return t_list
+    
+
+    def Read_x_slice(self, xid, label_list=['u'], tidx_list=[]):
+        """
+        Reads slices of dumped quantities at a time ID or time IDs. 
+        
+        Arguments
+        ---------
+        xid (int) : integer of xid dumped by initialize.F90. NOTE: Fortran indexing starts at 1. 
+        label_list (list) : list of terms to read in. Available is typically: "u", "v", "w", and "P" (case-sensitive)
+        tidx_list (list) : list of time IDs. 
+        
+        Returns
+        -------
+        sl (dict) : formatted dictionary similar to BudgetIO.slice()
+        """
+        
+        sl = {}
+        if type(label_list)==str: 
+            label_list = [label_list]
+        
+        for tidx in tidx_list:  
+            for lab in label_list: 
+                fname = "{:s}/Run{:02d}_t{:06d}_{:s}{:05d}.pl{:s}".format(self.dir_name, self.runid, tidx, 'x', xid, lab)
+
+                key_name = "{:s}_{:d}".format(lab, tidx)
+                sl[key_name] = np.fromfile(
+                    fname, dtype=np.dtype(np.float64), count=-1).reshape((self.ny,self.nz), order='F')
+            
+        sl['x'] = self.xLine[[xid-1]]
+        sl['y'] = self.yLine
+        sl['z'] = self.zLine
+
+        # build and save the extents, either in 1D, 2D, or 3D
+        ext = []
+        for term in ['x', 'y', 'z']: 
+            if len(sl[term]) > 1:  # if this is actually a slice (not a number), then add it to the extents
+                ext += [np.min(sl[term]), np.max(sl[term])]
+
+        sl['extent'] = ext
+
+        return sl
+
+    
+    def Read_y_slice(self, yid, label_list=['u'], tidx_list=[]):
+        """
+        Reads slices of dumped quantities at a time ID or time IDs. 
+        
+        Arguments
+        ---------
+        yid (int) : integer of yid dumped by initialize.F90
+        label_list (list) : list of terms to read in. Available is typically: "u", "v", "w", and "P" (case-sensitive)
+        tidx_list (list) : list of time IDs. 
+        
+        Returns
+        -------
+        sl (dict) : formatted dictionary similar to BudgetIO.slice()
+        """
+        
+        sl = {}
+        if type(label_list)==str: 
+            label_list = [label_list]
+        
+        for tidx in tidx_list:  
+            for lab in label_list: 
+                fname = "{:s}/Run{:02d}_t{:06d}_{:s}{:05d}.pl{:s}".format(self.dir_name, self.runid, tidx, 'y', yid, lab)
+
+                key_name = "{:s}_{:d}".format(lab, tidx)
+                sl[key_name] = np.fromfile(
+                    fname, dtype=np.dtype(np.float64), count=-1).reshape((self.nx,self.nz), order='F')
+            
+        sl['x'] = self.xLine
+        sl['y'] = self.yLine[[yid-1]]
+        sl['z'] = self.zLine
+
+        # build and save the extents, either in 1D, 2D, or 3D
+        ext = []
+        for term in ['x', 'y', 'z']: 
+            if len(sl[term]) > 1:  # if this is actually a slice (not a number), then add it to the extents
+                ext += [np.min(sl[term]), np.max(sl[term])]
+
+        sl['extent'] = ext
+
+        return sl
+    
+    
+    def Read_z_slice(self, zid, label_list=['u'], tidx_list=[]):
+        """
+        Reads slices of dumped quantities at a time ID or time IDs. 
+        
+        Arguments
+        ---------
+        zid (int) : integer of zid dumped by initialize.F90
+        label_list (list) : list of terms to read in. Available is typically: "u", "v", "w", and "P" (case-sensitive)
+        tidx_list (list) : list of time IDs. 
+        
+        Returns
+        -------
+        sl (dict) : formatted dictionary similar to BudgetIO.slice()
+        """
+        
+        sl = {}
+        if type(label_list)==str: 
+            label_list = [label_list]
+        
+        for tidx in tidx_list:  
+            for lab in label_list: 
+                fname = "{:s}/Run{:02d}_t{:06d}_{:s}{:05d}.pl{:s}".format(self.dir_name, self.runid, tidx, 'z', zid, lab)
+
+                key_name = "{:s}_{:d}".format(lab, tidx)
+                sl[key_name] = np.fromfile(
+                    fname, dtype=np.dtype(np.float64), count=-1).reshape((self.nx,self.ny), order='F')
+            
+        sl['x'] = self.xLine
+        sl['y'] = self.yLine
+        sl['z'] = self.zLine[[zid-1]]
+
+        # build and save the extents, either in 1D, 2D, or 3D
+        ext = []
+        for term in ['x', 'y', 'z']: 
+            if len(sl[term]) > 1:  # if this is actually a slice (not a number), then add it to the extents
+                ext += [np.min(sl[term]), np.max(sl[term])]
+
+        sl['extent'] = ext
+
+        return sl
 
 
 if __name__ == "__main__": 
