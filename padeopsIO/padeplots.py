@@ -5,6 +5,7 @@ import sys
 
 import padeopsIO.budgetkey as budgetkey
 
+
 class PlotIO(): 
     """
     Interface class for plotting and saving figures using a BudgetIO object. 
@@ -30,9 +31,24 @@ class PlotIO():
         plt.rcParams.update({'font.size': fontsize})
 
 
-    def xy_slice(io, budget_terms, z, xlim=None, ylim=None): 
+    def plot_xy(io, budget_terms, z, xlim=None, ylim=None, 
+                ax=None, xlabel=None, ylabel=None): 
         """
         Plots a slice in the xy-plane. 
+        
+        If `budget_terms` is a list, then plot_xy will recursively call itself for each term individually
+        and produce figures of each separately. 
+        
+        Arguments
+        ---------
+        io (BudgetIO obj) : BudgetIO object linked to padeops data
+        budget_terms (list or str) : terms to plot
+        z (float) : z-location to pull slices from
+        xlim, ylim : slice bounds, see BudgetIO.slice()
+        
+        Returns 
+        -------
+        
         """
         slices = io.slice(budget_terms, xlim=xlim, ylim=ylim, zlim=z)
 
@@ -40,15 +56,14 @@ class PlotIO():
             fig, ax = plt.subplots()
             im = ax.imshow(slices[term].T, extent=slices['extent'], origin='lower')
 
-            # fig.colorbar(im)
-            cb = common_cbar(fig, im, ax)
-            cb.set_label(PlotIO.keylab[term])
+            common_cbar(fig, im, ax, label=PlotIO.keylab[term])
 
             ax.set_xlabel(PlotIO.x_lab)
             ax.set_ylabel(PlotIO.y_lab)
 
             plt.show()
 
+    
     def xz_slice(): 
         """
         Plots a slice in the xz-plane. 
@@ -61,8 +76,10 @@ class PlotIO():
         """
         pass
 
+ 
+# ----------- additional helper functions ------------
 
-def common_cbar(fig, image, ax=None, location='right', height=1., width=0.02): 
+def common_cbar(fig, image, ax=None, location='right', label=None, height=1., width=0.02): 
     """
     Helper function to add a colorbar
     
@@ -80,12 +97,36 @@ def common_cbar(fig, image, ax=None, location='right', height=1., width=0.02):
         Default 0.02
     """
     if ax is None:  # need to pick an axis from the figure...
-        ax = fig.axes[0]  
+        # ax = fig.axes[0]  
         # TODO: make this better... maybe choose the largest one? Maybe make a new one each time? ugh
+        ax = common_axis(fig)
     
     h = ax.get_position().height  # axis height
-    cax = fig.add_axes([ax.get_position().x1+h*width, ax.get_position().y0+h/2*(1-height), 
-                    h*width, height*h])  # [start x, start y, width, height]
+    cax = fig.add_axes([ax.get_position().x1+h*width, 
+                        ax.get_position().y0+h/2*(1-height), 
+                        h*width, 
+                        height*h])  # [start x, start y, width, height]
     cbar = fig.colorbar(image, cax=cax)
     
+    if label is not None: 
+        cbar.set_label(label)
+    
     return cbar  # this probably will never be used
+
+
+def common_axis(fig, xlabel=None, ylabel=None, title=None): 
+    """
+    Helper function to format common axes
+
+    format common axes: 
+    https://stackoverflow.com/questions/16150819/common-xlabel-ylabel-for-matplotlib-subplots
+    """
+    # create a new axis spanning the whole figure
+    ax_new = fig.add_subplot(111, frameon=False)
+    plt.tick_params(labelcolor='none', which='both', top=False, bottom=False, left=False, right=False)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.title(title)
+    
+    return ax_new  # return the newly created axis
+

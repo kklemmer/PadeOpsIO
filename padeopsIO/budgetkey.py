@@ -153,19 +153,19 @@ def key_labels():
         # BUDGET 1 TERMS: (momentum)
         'DuDt': "$Du/Dt$",  # x-advection
         'dpdx': "$\\partial p/\\partial x$",  # x-pressure gradient
-        'xSGS': (1, 3),  # x-sub grid stresses
-        'xAD': (1, 4),   # x-Actuator disk
+        'xSGS': "$x$-SGS",  # x-sub grid stresses
+        'xAD': "AD$_x$",   # x-Actuator disk
         'DvDt': "$Dv/Dt$",  
         'dpdy': "$\\partial p/\\partial y$", 
-        'ySGS': (1, 7), 
+        'ySGS': "$y$-SGS", 
         'DwDt': "$Dw/Dt$", 
         'dpdz': "$\\partial p/\\partial z$", 
-        'zSGS': (1, 10),
-        'xCor': (1, 11), # x-coriolis
-        'xGeo': (1, 12), # x-geostrophic pressure grad. 
-        'yCor': (1, 13), 
-        'yGeo': (1, 14), 
-        'yAD': (1, 15), 
+        'zSGS': '$z$-SGS',
+        'xCor': '$x$-Coriolis', # x-coriolis
+        'xGeo': '$x$-Geostrophic', # x-geostrophic pressure grad. 
+        'yCor': '$y$-Coriolis', 
+        'yGeo': '$y$-Geostrophic', 
+        'yAD': "AD$_y$", 
         # BUDGET 2 TERMS: (MKE)  TODO - improve the naming keys
         'MKE_TKE_loss': (2, 1), 
         'MKE_adv': (2, 2), 
@@ -192,9 +192,9 @@ def key_labels():
         'vwake': "$\\Delta v_{wake}$",
         'wwake': "$\\Delta w_{wake}$", 
         # SPATIAL COORDINATES
-        'x': "$x$", 
-        'y': "$y$", 
-        'z': "$z$", 
+        'x': "$x/D$", 
+        'y': "$y/D$", 
+        'z': "$z/D$", 
         't': "$t$"
         }
     

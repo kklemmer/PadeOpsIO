@@ -46,7 +46,7 @@ class InflowParser():
         
         """        
         
-        print(kwargs)
+#         print(kwargs)
 
         # check keyword arguments
         if 'zLine' in kwargs: 
