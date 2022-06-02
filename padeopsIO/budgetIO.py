@@ -822,9 +822,10 @@ class BudgetIO():
                 
         elif budget_terms is not None: 
             # read budgets
-            self.read_budgets(budget_terms=budget_terms, tidx=tidx, overwrite=overwrite)
+            key_subset = self._parse_budget_terms(budget_terms)
+            self.read_budgets(budget_terms=key_subset, tidx=tidx, overwrite=overwrite)
 
-            for term in budget_terms: 
+            for term in key_subset: 
                 slices[term] = np.squeeze(self.budget[term][xid, yid, zid])  
                 
         else: 
@@ -847,7 +848,9 @@ class BudgetIO():
         return slices
 
 
-    def get_xids(self, x=None, y=None, z=None, return_none=False, return_slice=False): 
+    def get_xids(self, x=None, y=None, z=None, 
+                 x_ax=None, y_ax=None, z_ax=None, 
+                 return_none=False, return_slice=False): 
         """
         Translates x, y, and z limits in the physical domain to indices based on self.xLine, self.yLine, and self.zLine
 
@@ -868,9 +871,12 @@ class BudgetIO():
             raise(AttributeError('No grid associated. '))
 
         # set up this way in case we want to introduce an offset later on (i.e. turbine-centered coordinates)
-        x_ax = self.xLine  # - offset_x  # TODO? 
-        y_ax = self.yLine
-        z_ax = self.zLine
+        if x_ax is None: 
+            x_ax = self.xLine  # - offset_x  # TODO? 
+        if y_ax is None: 
+            y_ax = self.yLine
+        if z_ax is None:        
+            z_ax = self.zLine
 
         ret = ()
 
