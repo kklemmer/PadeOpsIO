@@ -124,10 +124,14 @@ class BudgetIO():
             self.Lx = kwargs['Lx']
             self.Ly = kwargs['Ly']
             self.Lz = kwargs['Lz']  
+            
+        for kwarg in kwargs: 
+            if kwarg in ['runid', 'Lx', 'Ly', 'Lz']: 
+                self.__dict__[kwarg] = kwargs[kwarg]
                 
         # do namelist stuff - this is necessary if Lx, Ly, ... etc were not passed in. 
         try: 
-            self._read_inputfile()
+            self._read_inputfile(**kwargs)
         except FileNotFoundError as err:  # TODO fix this
             warnings.warn("BudgetIO: Problem reading input file. ")
             print(err)
@@ -159,15 +163,22 @@ class BudgetIO():
         # object is reading from PadeOps output files directly
         if self.verbose: 
             print('BudgetIO initialized using info files at time:' + '{:.06f}'.format(self.time))
-
-        self.last_tidx = self.unique_budget_tidx()  # last tidx in the run with budgets
+            
+        self.field = {}
+        
+        try: 
+            self.last_tidx = self.unique_budget_tidx()  # last tidx in the run with budgets
+        except ValueError as e: 
+            warnings.warn("_init_padeops(): No budget files found!")
+            # returning here is probably OK? 
+            return
+        
         self.last_n = self.last_budget_n()  # last tidx with an associated budget
         
         # The following are initialized as the final saved instanteous field and budget: 
-        self.field = {}
         self.field_tidx = self.last_tidx
         
-        self.all_budget_tidx = self.unique_budget_tidx(all_tidx=True)
+        self.all_budget_tidx = self.unique_budget_tidx(return_last=False)
         self.budget_tidx = self.last_tidx  # but may be changed by the user
         self.budget_n = self.last_n
 
@@ -184,14 +195,27 @@ class BudgetIO():
             return
 
         inputfile_ls = []  
-
+                
         if 'runid' in kwargs.keys(): 
             # if given a runid, search for an inputfile with Run{runid} in the name
             inputfile_ls = glob.glob(self.dir_name + os.sep + 'Run{:02d}*.dat'.format(kwargs['runid']))
+                        
+            if len(inputfile_ls) == 0: 
+                if self.verbose: 
+                    warnings.warn('_read_inputfile(): runid {:d} requested, \
+                        but no matching inputfile found was found.'.format(kwargs['runid']))
 
-            if len(inputfile_ls) == 0 and self.verbose: 
-                warnings.warn('_read_inputfile(): runid {:d} requested, \
-                    but no matching inputfile found was found.'.format(kwargs['runid']))
+                # try to search all input files '*.dat' for the proper run and match it
+                for inputfile in glob.glob(self.dir_name + os.sep + '*.dat'): 
+                    input_nml = f90nml.read(inputfile) 
+                    if self.verbose: 
+                        print('_read_inputfile(): trying inputfile ', inputfile)
+                    
+                    if input_nml['IO']['runid'] == kwargs['runid']: 
+                        self.input_nml = input_nml
+                        self._convenience_variables()  # make some variables in the metadata more accessible
+                        self.associate_nml = True  # successfully loaded input file
+                        return
                         
         # if no runid given, or if the previous search failed, search all files ending in '*.dat' 
         if len(inputfile_ls) == 0: 
@@ -204,16 +228,13 @@ class BudgetIO():
                 print("    Found the following files:", inputfile_ls)
         
         # if there are still no input files found, we've got a problem 
-        # TODO: fix this
         # TODO: trim dir_name() to remove trailing spaces
         
         if self.verbose: 
             print("Reading namelist file from {}".format(inputfile_ls[0]))
             
         self.input_nml = f90nml.read(inputfile_ls[0])
-        
         self._convenience_variables()  # make some variables in the metadata more accessible
-        
         self.associate_nml = True  # successfully loaded input file
         
         # BUDGET VARIABLES: 
@@ -880,9 +901,13 @@ class BudgetIO():
             return ret
     
 
-    def unique_tidx(self, firstlast=None): 
+    def unique_tidx(self, return_last=False): 
         """
         Pulls all the unique tidx values from a directory. 
+        
+        Arguments
+        ---------
+        return_last (bool) : If True, returns only the largest value of TIDX. Default False. 
         """
 
         if not self.associate_padeops:
@@ -894,17 +919,23 @@ class BudgetIO():
         
         # searches for the formatting *_t(\d+)* in all filenames
         t_list = [int(re.findall('Run{:02d}.*_t(\d+).*'.format(runid), name)[0]) 
-                  for name in filenames if re.findall('Run{:02d}.*_t(\d+).*'.format(runid), name)]
-        return np.unique(t_list)
+                  for name in filenames 
+                  if re.findall('Run{:02d}.*_t(\d+).*'.format(runid), name)]
+        
+        if return_last: 
+            return np.max(t_list)
+        else: 
+            return np.unique(t_list)
 
     
-    def unique_budget_tidx(self, all_tidx=False): 
+    def unique_budget_tidx(self, return_last=True): 
         """
         Pulls all the unique tidx values from a directory. 
         
         Parameters
         ----------
-        all_tidx (bool) : if True, returns an entire list of unique tidx associated with budgets. Default False
+        return_last (bool) : If False, returns only the largest TIDX associated with budgets. 
+            Else, returns an entire list of unique tidx associated with budgets. Default True
         """
 
         # TODO: fix for .npz
@@ -915,12 +946,32 @@ class BudgetIO():
         
         # searches for the formatting *_t(\d+)* in budget filenames
         t_list = [int(re.findall('Run{:02d}.*budget.*_t(\d+).*'.format(runid), name)[0]) 
-                  for name in filenames if re.findall('Run{:02d}.*budget.*_t(\d+).*'.format(runid), name)]
+                  for name in filenames 
+                  if re.findall('Run{:02d}.*budget.*_t(\d+).*'.format(runid), name)]
         
-        if all_tidx: 
-            return np.unique(t_list)
-        else: 
+        if return_last: 
             return np.max(t_list)
+        else: 
+            return np.unique(t_list)
+        
+        
+    def unique_times(self): 
+        """
+        Reads the .out file of each unique time and returns an array of [physical] times corresponding
+        to the time IDs from unique_tidx(). 
+        
+        Returns
+        -------
+        times (arr) : list of times associated with each time ID in unique_tidx()
+        """
+        
+        times = []; 
+        for tidx in self.unique_tidx(): 
+            fname = os.path.join(self.dir_name, "Run{:02d}_info_t{:06d}.out".format(self.runid, tidx))
+            t = np.genfromtxt(fname, dtype=None)[0]
+            times.append(t)
+
+        return np.array(times)
 
     
     def last_budget_n(self): 
@@ -935,7 +986,8 @@ class BudgetIO():
 
         # capturing *_n(\d+)* in filenames
         t_list = [int(re.findall('Run{:02d}.*_n(\d+).*'.format(runid), name)[0]) 
-                  for name in filenames if re.findall('Run{:02d}.*_n(\d+).*'.format(runid), name)]
+                  for name in filenames 
+                  if re.findall('Run{:02d}.*_n(\d+).*'.format(runid), name)]
         return np.max(t_list)
     
     
@@ -956,7 +1008,8 @@ class BudgetIO():
             runid = self.runid
             # capturing *_budget(\d+)* in filenames
             budget_list = [int(re.findall('Run{:02d}.*_budget(\d+).*'.format(runid), name)[0]) 
-                            for name in filenames if re.findall('Run{:02d}.*_budget(\d+).*'.format(runid), name)]
+                           for name in filenames 
+                           if re.findall('Run{:02d}.*_budget(\d+).*'.format(runid), name)]
 
         else: 
             warnings.warn('existing_budgets(): No associated budget files found. ')
