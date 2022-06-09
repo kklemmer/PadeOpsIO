@@ -550,10 +550,15 @@ class BudgetIO():
         # we need to handle computed quantities differently... 
         if any(t in ['uwake', 'vwake', 'wwake'] for t in budget_terms): 
             self.calc_wake()
+            
+            self.associate_budget = True
+            if self.verbose > 0: 
+                print("read_budgets: Successfully loaded wake budgets. ")
+
 
         # parse budget_terms with the key
-        key_subset = self._parse_budget_terms(budget_terms)
-
+        key_subset = self._parse_budget_terms(budget_terms, include_wakes=False)
+        
         if not overwrite:
             remove_keys = [key for key in key_subset if key in self.budget.keys()]
             if len(remove_keys) > 0 and self.verbose: 
@@ -564,7 +569,7 @@ class BudgetIO():
             key_subset = {key:key_subset[key] for key in key_subset if key not in self.budget.keys()}
 
         if self.associate_padeops: 
-            self._read_budgets_padeops(key_subset, tidx=tidx)
+            self._read_budgets_padeops(key_subset, tidx=tidx)  # this will not include wake budgets
         
         elif self.associate_npz: 
             self._read_budgets_npz(key_subset, mmap=mmap)
@@ -628,7 +633,7 @@ class BudgetIO():
             print('PadeOpsViz loaded the following budgets from .npz: ', list(key_subset.keys()))
 
 
-    def _parse_budget_terms(self, budget_terms): 
+    def _parse_budget_terms(self, budget_terms, include_wakes=True): 
         """
         Takes a list of budget terms, either keyed in index form (budget #, term #) or in common form (e.g. ['u_bar', 'v_bar'])
         and returns a subset of the `keys` dictionary that matches two together. `keys` dictionary is always keyed in common form. 
@@ -641,6 +646,11 @@ class BudgetIO():
         'all' checks what budgets exist and tries to load them all. 
 
         For more information on the bi-directional keys, see budget_key.py
+        
+        Arguments
+        ---------
+        budget_terms : list of strings or string, see above
+        include_wakes (bool) : optional, includes wake budgets if True, default True. 
         """
 
         # add string shortcuts here... # TODO move shortcuts to budgetkey.py? 
@@ -659,7 +669,7 @@ class BudgetIO():
         
         # parse through terms: they are either 1) valid, 2) missing (but valid keys), or 3) invalid (not in BudgetIO.key)
 
-        existing_keys = self.existing_terms()
+        existing_keys = self.existing_terms(include_wakes=include_wakes)
         existing_tup = [BudgetIO.key[key] for key in existing_keys]  # corresponding associated tuples (#, #)
 
         valid_keys = [t for t in budget_terms if t in existing_keys]
@@ -1020,11 +1030,14 @@ class BudgetIO():
         else: 
             warnings.warn('existing_budgets(): No associated budget files found. ')
             return []
+        
+        if 0 in budget_list: 
+            budget_list.append(5)  # wake budgets can be recovered from mean budgets
 
         return list(np.unique(budget_list))
     
     
-    def existing_terms(self, budget=None): 
+    def existing_terms(self, budget=None, include_wakes=True): 
         """
         Checks file names for a particular budget and returns a list of all the existing terms.  
 
@@ -1037,6 +1050,7 @@ class BudgetIO():
             Budget 2: MKE
             Budget 3: TKE
             Budget 5: Wake deficit
+        include_wakes (bool) : Includes wakes in the returned budget terms if True, default True. 
 
         Returns
         -------
@@ -1086,6 +1100,15 @@ class BudgetIO():
                         for name in filenames if 
                         re.findall('Run{:02d}_budget{:01d}_term(\d+).*'.format(runid, b), name)]
                 tup_list += [((b, term)) for term in set(terms)]  # these are all tuples
+                
+                # wake budgets: 
+                wake_budgets = (1, 2, 3)
+                if include_wakes and b == 5:  
+                    terms = [int(re.findall('Run{:02d}_budget{:01d}_term(\d+).*'.format(runid, 0), name)[0]) 
+                            for name in filenames if 
+                            re.findall('Run{:02d}_budget{:01d}_term(\d+).*'.format(runid, 0), name)]  # read from mean budgets
+
+                    tup_list += [((b, term)) for term in wake_budgets if term in terms]
             
             # convert tuples to keys
             t_list = [BudgetIO.key.inverse[key][0] for key in tup_list]
