@@ -661,6 +661,9 @@ class BudgetIO():
 
         elif budget_terms=='all': 
             budget_terms = self.existing_terms()
+            
+        elif budget_terms=='RANS': 
+            budget_terms = ['ubar', 'vbar', 'wbar', 'pbar', 'uu', 'uv', 'uw', 'vv', 'vw', 'ww']
 
         elif type(budget_terms)==str: 
             warnings.warn("keyword argument budget_terms must be either 'default', 'all', or a list.")
@@ -796,7 +799,7 @@ class BudgetIO():
             print("calc_wake(): Computed wake velocities. ")
 
     
-    def slice(self, budget_terms=None, field=None, tidx=None, xlim=None, ylim=None, zlim=None, overwrite=True): 
+    def slice(self, budget_terms=None, field=None, tidx=None, xlim=None, ylim=None, zlim=None, overwrite=False): 
         """
         Returns a slice of the requested budget term(s) as a dictionary. 
 
