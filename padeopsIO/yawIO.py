@@ -25,33 +25,9 @@ class YawIO(pio.BudgetIO):
         
         if self.verbose: 
             print("Initialized YawIO object")
-        
-        
-    def read_turb_power(self, tidx=None, turb=1, steady=True): 
-        """
-        Reads the turbine power from the output file *.pow. 
-
-        tidx (int) : time ID to read turbine power from. Default: calls self.unique_budget_tidx()
-        turb (int) : Turbine number. Default 1
-        steady (bool) : Averages results if True. If False, returns an array containing the contents of `*.pow`. 
-        """
-        
-        if tidx is None: 
-            if self.associate_budget: 
-                tidx = self.unique_budget_tidx()
-            else: 
-                tidx = self.unique_tidx(return_last=True)
-        
-        fname = self.dir_name + '/Run{:02d}_t{:06d}_turbP{:02}.pow'.format(self.runid, tidx, turb)
-        power = np.genfromtxt(fname, dtype=float)
-
-        if steady: 
-            return np.mean(power)
-
-        return power  # this is an array
 
 
-    def read_turb_vel(self, tidx=None, turb=1, steady=True, u=True, v=True): 
+    def read_turb_vel(self, tidx=None, turb=1, steady=True, u=True, v=True, rotate=False): 
         """
         Reads the turbine power from the output file *.pow. 
 
@@ -59,17 +35,26 @@ class YawIO(pio.BudgetIO):
         turb (int) : Turbine number. Default 1
         steady (bool) : Averages results if True. If False, returns an array containing the contents of `*.pow`. 
         u, v (bool) : dictates whether to return u, v, or both. Default: u=True, v=True
+        rotate (bool) : rotates uTurb, vTurb to be aligned with the freestream flow. Will return both
+            u and v velocities if rotate=True. Default False. 
         """
         
         if tidx is None: 
-            if self.associate_budget: 
+            try: 
                 tidx = self.unique_budget_tidx()
-            else: 
+            except ValueError as e:   # TODO - Fix this!! 
                 tidx = self.unique_tidx(return_last=True)
         
         ret = ()
         
-        for i, ui in enumerate((u, v)): 
+        if rotate: 
+            # if rotating the domain, need to read U and V regardless of what is output
+            u_read, v_read = True, True
+        else: 
+            u_read, v_read = u, v
+        
+        # read in velocity files
+        for i, ui in enumerate((u_read, v_read)): 
             if ui: 
                 if i == 0: 
                     u_string = "U"
@@ -85,6 +70,18 @@ class YawIO(pio.BudgetIO):
                 else: 
                     ret += (uturb, )  # this is an array
                     
+        if rotate: 
+            # Do the euler rotations now
+            yaw = self.yaw * np.pi / 180  # yaw in radians
+            new_ret = ()  # this will be returned
+            
+            if u: 
+                new_ret += (ret[0] * np.cos(yaw) - ret[1] * np.sin(yaw), )
+            if v: 
+                new_ret += (ret[0] * np.sin(yaw) + ret[1] * np.cos(yaw), )
+            
+            ret = new_ret  # there are an infinite number of better ways to have done this
+                    
         if len(ret) == 0: 
             raise ValueError("u or v must be True, function cannot return nothing")
         if len(ret) == 1: 
@@ -92,5 +89,34 @@ class YawIO(pio.BudgetIO):
         else: 
             return ret
         
+        
+    def rotate_uv(self, overwrite=True): 
+        """
+        Rotate the ubar and vbar budget field. Loads 'ubar', 'vbar' in the YawIO object. 
+        
+        Parameters 
+        ----------
+        overwrite (bool) : Overwrites 'ubar' and 'vbar' in self.budget if True; default True. If False, then 
+            rotate_uv() returns the rotated u_bar, v_bar arrays. 
+        """
+
+        # always reload u, v, to make sure this isn't a doubly-rotated field
+        self.read_budgets(budget_terms=['ubar', 'vbar'], overwrite=True)  
+
+        yaw = self.yaw * np.pi / 180  # yaw in radians
+        new_ubar = self.budget['ubar'] * np.cos(yaw) - self.budget['vbar'] * np.sin(yaw)
+        new_vbar = self.budget['ubar'] * np.sin(yaw) + self.budget['vbar'] * np.cos(yaw)
+
+        # overwrite
+
+        if self.verbose: 
+            print("Rotated ubar and vbar fields to align with the freestream. ")
+
+        if overwrite: 
+            self.budget['ubar'] = new_ubar
+            self.budget['vbar'] = new_vbar
+
+        else: 
+            return (new_ubar, new_vbar)
         
 
