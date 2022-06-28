@@ -974,7 +974,7 @@ class BudgetIO():
             return np.unique(t_list)
         
         
-    def unique_times(self): 
+    def unique_times(self, return_last=False): 
         """
         Reads the .out file of each unique time and returns an array of [physical] times corresponding
         to the time IDs from unique_tidx(). 
@@ -982,9 +982,17 @@ class BudgetIO():
         Returns
         -------
         times (arr) : list of times associated with each time ID in unique_tidx()
+        return_false (bool) : if True, only returns the final element in the array. Default: False
         """
         
         times = []; 
+        
+        if return_last:  # save time by only reading the final TIDX
+            tidx = self.unique_tidx(return_last=return_last)
+            fname = os.path.join(self.dir_name, "Run{:02d}_info_t{:06d}.out".format(self.runid, tidx))
+            t = np.genfromtxt(fname, dtype=None)[0]
+            return t
+        
         for tidx in self.unique_tidx(): 
             fname = os.path.join(self.dir_name, "Run{:02d}_info_t{:06d}.out".format(self.runid, tidx))
             t = np.genfromtxt(fname, dtype=None)[0]
@@ -1247,6 +1255,33 @@ class BudgetIO():
         sl['extent'] = ext
 
         return sl
+    
+    
+    def read_turb_power(self, tidx=None, turb=1, steady=True): 
+        """
+        Reads the turbine power from the output file *.pow. 
+
+        tidx (int) : time ID to read turbine power from. Default: calls self.unique_budget_tidx()
+        turb (int) : Turbine number. Default 1
+        steady (bool) : Averages results if True. If False, returns an array containing the contents of `*.pow`. 
+        """
+        
+        if tidx is None: 
+            try: 
+                tidx = self.unique_budget_tidx()
+            except ValueError as e:   # TODO - Fix this!! 
+                tidx = self.unique_tidx(return_last=True)
+        
+        fname = self.dir_name + '/Run{:02d}_t{:06d}_turbP{:02}.pow'.format(self.runid, tidx, turb)
+        if self.verbose: 
+            print("  Reading", fname)
+            
+        power = np.genfromtxt(fname, dtype=float)
+
+        if steady: 
+            return np.mean(power)
+
+        return power  # this is an array
 
 
 if __name__ == "__main__": 
