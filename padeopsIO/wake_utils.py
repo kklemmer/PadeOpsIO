@@ -6,12 +6,16 @@ import numpy as np
 import csv
 
 
-def wake_centroid_2d(u_hub, y, thresh=0): 
+def wake_centroid_2d(u_hub=None, u_wake_hub=None, y=None, thresh=0): 
     """
     u_hub (nx * ny) : 2D slice at hub height
     """
-#     thresh = 0 
-    del_u = 1 - u_hub  # assume freestream is normalized to 1
+    
+    if u_wake_hub is None: 
+        del_u = 1 - u_hub  # assume freestream is normalized to 1
+    else: 
+        del_u = u_wake_hub
+        
     del_u[del_u < thresh] = 0
     
     numer = np.trapz(del_u*y, axis=1)
@@ -20,7 +24,7 @@ def wake_centroid_2d(u_hub, y, thresh=0):
     return numer/denom
 
 
-def wake_centroid_3d(u, u_wake=None, y=None, z=None, thresh=0): 
+def wake_centroid_3d(u=None, u_wake=None, y=None, z=None, thresh=0): 
     """
     u (nx * ny * nz) : 3D u-velocity field normalized to geostrophic wind
     u_wake (nx * ny * nz) : 3D wake field with background subtracted already. Supercedes
@@ -35,7 +39,7 @@ def wake_centroid_3d(u, u_wake=None, y=None, z=None, thresh=0):
     if u_wake is None: 
         del_u = 1 - u  # assume freestream is normalized to 1
     else: 
-        del_u = uwake
+        del_u = u_wake
         
     # apply thresholding
     del_u[del_u < thresh] = 0
@@ -84,9 +88,35 @@ def usq_mean(run, diam=1, xlim=None):
         return ubar_sq
     
     
-def rans_budgets(run, xlim=None, ylim=None, zlim=None, compute_x=True, compute_y=True): 
+def rans_budgets(run, xlim=None, ylim=None, zlim=None, 
+                 compute_x=True, compute_y=True, compute_z=False, 
+                 combine_terms=False, compute_residual=True): 
     """
     Compute RANS budgets from output data with mean fields only. 
+    
+    Sign convention: advection terms are "moved" to the right-hand side such that they include a negative sign. 
+    Pressure gradients already include a negative sign, and density is assumed to be unity. 
+    
+    Parameters
+    ----------
+    run (BudgetIO object)
+    xlim, ylim, zlim : array-like, see BudgetIO.slice()
+    compute_x, compute_y, compute_z (bool) : dictates which RANS budgets to compute. Default: x, y True, z False
+    combine_terms (bool) : combines advection terms and turbulence terms. Default: False
+    compute_residual (bool) : computes the residual pointwise. Default: True
+    
+    Returns
+    -------
+    sl (dict) : slice from run.slice()
+    rans_x (dict) : dictionary with the following keys - 
+        ['ududx', 'vdudy', 'wdudz', 'dpdx', 'xCor', 'duudx', 'duvdy', 'duwdz']
+    rans_y (dict) : dictionary with the following keys - 
+        ['udvdx', 'vdvdy', 'wdvdz', 'dpdy', 'yCor', 'dvudx', 'dvvdy', 'dvwdz']
+    rans_z (dict) : dictionary with the following keys - 
+        ['udwdx', 'vdwdy', 'wdwdz', 'dpdz', 'zCor', 'dwudx', 'dwvdy', 'dwwdz']
+        
+    # TODO : Clean up this function :)
+
     """
     
     terms = ['ubar', 'vbar', 'wbar', 'pbar', 'uu', 'uv', 'uw', 'vv', 'vw', 'ww']
@@ -96,27 +126,47 @@ def rans_budgets(run, xlim=None, ylim=None, zlim=None, compute_x=True, compute_y
     Ro = run.Ro
     lat = run.input_nml['physics']['latitude']
     C1 = 2/Ro * np.sin(lat*np.pi/180)
-    Gx = 1 
+#     Gx = 1 
+    # need to retrieve and trim the inflow profiles: 
+    Gx, Gy = run._get_inflow()
+    zids = run.get_xids(z=zlim, return_slice=True)
+    Gx = Gx[zids]
+    Gy = Gy[zids]
 
-    ret = ()
+    ret = (sl, )
     
     # x-terms: 
     if compute_x: 
         rans_x = {}
+        x_adv_terms = ['ududx', 'vdudy', 'wdudz']
+        x_turb_terms = ['duudx', 'duvdy', 'duwdz']
 
         rans_x['ududx'] = -(sl['ubar'] * partialx(sl['ubar'], run.dx))
         rans_x['vdudy'] = -(sl['vbar'] * partialy(sl['ubar'], run.dy))
         rans_x['wdudz'] = -(sl['wbar'] * partialz(sl['ubar'], run.dz))
         rans_x['dpdx'] = -partialx(sl['pbar'], run.dx)
-        rans_x['xCor'] = C1*sl['vbar']
+        rans_x['xCor'] = -C1*(Gy - sl['vbar'])
         rans_x['duudx'] = -partialx(sl['uu'], run.dx)
         rans_x['duvdy'] = -partialy(sl['uv'], run.dy)
         rans_x['duwdz'] = -partialz(sl['uw'], run.dz)
-        ret += (rans_x, )
+        
+        if compute_residual: 
+            rans_x['residual'] = sum(rans_x[key] for key in rans_x.keys())
+        
+        if combine_terms: 
+            rans_xcomb = {key: rans_x[key] for key in rans_x.keys() if key not in (x_adv_terms + x_turb_terms)}
+            rans_xcomb['advection'] = sum(rans_x[key] for key in x_adv_terms)
+            rans_xcomb['turbulence'] = sum(rans_x[key] for key in x_turb_terms)
+            
+            ret += (rans_xcomb, )
+        else: 
+            ret += (rans_x, )
 
     # y-terms: 
     if compute_y: 
         rans_y = {}
+        y_adv_terms = ['udvdx', 'vdvdy', 'wdvdz']
+        y_turb_terms = ['dvudx', 'dvvdy', 'dvwdz']
 
         rans_y['udvdx'] = -(sl['ubar'] * partialx(sl['vbar'], run.dx))
         rans_y['vdvdy'] = -(sl['vbar'] * partialy(sl['vbar'], run.dy))
@@ -126,11 +176,49 @@ def rans_budgets(run, xlim=None, ylim=None, zlim=None, compute_x=True, compute_y
         rans_y['dvudx'] = -partialx(sl['uv'], run.dx)
         rans_y['dvvdy'] = -partialy(sl['vv'], run.dy)
         rans_y['dvwdz'] = -partialz(sl['vw'], run.dz)
-        ret += (rans_y, )
+        
+        if compute_residual: 
+            rans_y['residual'] = sum(rans_y[key] for key in rans_y.keys())
+        
+        if combine_terms: 
+            rans_ycomb = {key: rans_y[key] for key in rans_y.keys() if key not in (y_adv_terms + y_turb_terms)}
+            rans_ycomb['advection'] = sum(rans_y[key] for key in y_adv_terms)
+            rans_ycomb['turbulence'] = sum(rans_y[key] for key in y_turb_terms)
+            
+            ret += (rans_ycomb, )
+        else: 
+            ret += (rans_y, )
+        
+    # z-terms: 
+    if compute_z: 
+        rans_z = {}
+        z_adv_terms = ['udwdx', 'vdwdy', 'wdwdz']
+        z_turb_terms = ['dwudx', 'dwvdy', 'dwwdz']
+
+        rans_z['udwdx'] = -(sl['ubar'] * partialx(sl['wbar'], run.dx))
+        rans_z['vdwdy'] = -(sl['vbar'] * partialy(sl['wbar'], run.dy))
+        rans_z['wdwdz'] = -(sl['wbar'] * partialz(sl['wbar'], run.dz))
+        rans_z['dpdz'] = -partialz(sl['pbar'], run.dz)
+        rans_z['zCor'] = np.zeros(sl['ubar'].shape)
+        rans_z['dwudx'] = -partialx(sl['uw'], run.dx)
+        rans_z['dwvdy'] = -partialy(sl['vw'], run.dy)
+        rans_z['dwwdz'] = -partialz(sl['ww'], run.dz)
+        
+        if compute_residual: 
+            rans_z['residual'] = sum(rans_z[key] for key in rans_zkeys())
+        
+        if combine_terms: 
+            rans_zcomb = {key: rans_z[key] for key in rans_z.keys() if key not in (z_adv_terms + z_turb_terms)}
+            rans_zcomb['advection'] = sum(rans_z[key] for key in z_adv_terms)
+            rans_zcomb['turbulence'] = sum(rans_z[key] for key in z_turb_terms)
+            
+            ret += (rans_zcomb, )
+        else: 
+            ret += (rans_z, )
+
     
-    if len(ret) == 0: 
-        raise ValueError("Nothing computed! Check compute_x and compute_y keyword arguments.")
-    elif len(ret) == 1: 
+    if len(ret) == 1: 
+        print("Nothing computed! Check compute_x and compute_y keyword arguments. Returning slice only")
         return ret[0]
     else: 
         return ret
