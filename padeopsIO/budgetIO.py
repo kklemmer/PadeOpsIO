@@ -13,6 +13,7 @@ except ImportError:
 
 import padeopsIO.budgetkey as budgetkey  # defines key pairing
 import padeopsIO.inflow as inflow  # interface to retrieve inflow profiles
+import padeopsIO.turbineArray as turbineArray  # reads in a turbine array similar to turbineMod.F90
 
 class BudgetIO(): 
     """
@@ -83,6 +84,7 @@ class BudgetIO():
         self.associate_budget = False
         self.associate_grid = False
         self.associate_field = False
+        self.associate_turbines = False
 
         if all(x in kwargs for x in ['runid', 'Lx', 'Ly', 'Lz']) or ('padeops' in kwargs): 
             try: 
@@ -93,11 +95,13 @@ class BudgetIO():
                     print('Initialized BudgetIO at ' + dir_name + ' from PadeOps source files. ')
 
             except OSError as err: 
-                warnings.warn('Attempted to read PadeOps output files, but at least one was missing.')
+                print('Attempted to read PadeOps output files, but at least one was missing.')
                 print(err)
+                raise
         
-        # if PadeOps fails to associate, try loading files from .npz
-        if not self.associate_padeops: 
+        # if padeops wasn't specifically requested, try with npz files: 
+#         if not self.associate_padeops: 
+        else: 
             self._init_npz(**kwargs)
             self.associate_npz = True
 
@@ -142,6 +146,27 @@ class BudgetIO():
         else: 
             self.tidx = kwargs['tidx']
 
+        # READ TURBINES
+        if self.associate_nml == True: 
+            turb_dir = self.input_nml['windturbines']['turbinfodir']
+            ADM_type = self.input_nml['windturbines']['adm_type']
+            num_turbines = self.input_nml['windturbines']['num_turbines']
+            self.turbineArray = turbineArray.TurbineArray(turb_dir, 
+                                                          ADM_type=ADM_type, 
+                                                          num_turbines=num_turbines, 
+                                                          verbose=self.verbose)
+            self.associate_turbines = True
+            
+            if num_turbines == 1: 
+                if 'normalize_origin' in kwargs and kwargs['normalize_origin']: 
+                    print("One turbine found, but keeping domain coordinates")
+                else: 
+                    if self.verbose: 
+                        print("Reading 1 turbine, normalizing origin. To turn off, initialize with `normalize_origin=False`")
+                    self.xLine -= self.turbineArray.xloc
+                    self.yLine -= self.turbineArray.yloc
+                    self.zLine -= self.turbineArray.zloc
+
         # These lines are taken almost verbatim from PadeOpsViz.py
 
         # read accompanying info file
@@ -181,7 +206,7 @@ class BudgetIO():
         self.all_budget_tidx = self.unique_budget_tidx(return_last=False)
         self.budget_tidx = self.last_tidx  # but may be changed by the user
         self.budget_n = self.last_n
-
+        
     
     def _read_inputfile(self, **kwargs): 
         """
@@ -545,8 +570,11 @@ class BudgetIO():
             existing budgets before loading new ones. 
         tidx (int) : if given, requests budget dumps at a specific time ID. Default None. This only affects
             reading from PadeOps output files; .npz are limited to one saved tidx. 
-       """
-
+        """
+        
+        if not self.associate_budget: 
+            raise AttributeError("read_budgets(): No budgets linked. ")
+        
         # we need to handle computed quantities differently... 
         if any(t in ['uwake', 'vwake', 'wwake'] for t in budget_terms): 
             self.calc_wake()
