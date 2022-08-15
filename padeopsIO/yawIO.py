@@ -90,7 +90,7 @@ class YawIO(pio.BudgetIO):
             return ret
         
         
-    def rotate_uv(self, overwrite=True): 
+    def rotate_uv(self, overwrite=True, load_fields=False): 
         """
         Rotate the ubar and vbar budget field. Loads 'ubar', 'vbar' in the YawIO object. 
         
@@ -98,14 +98,22 @@ class YawIO(pio.BudgetIO):
         ----------
         overwrite (bool) : Overwrites 'ubar' and 'vbar' in self.budget if True; default True. If False, then 
             rotate_uv() returns the rotated u_bar, v_bar arrays. 
+        load_fields (bool) : uses instanteous field variables instead of budgets. 
         """
 
         # always reload u, v, to make sure this isn't a doubly-rotated field
-        self.read_budgets(budget_terms=['ubar', 'vbar'], overwrite=True)  
+        if load_fields: 
+            self.read_fields(field_terms=['u', 'v']) # TODO: there is no overwrite check on this! 
+            u = self.field['u']
+            v = self.field['v']
+        else: 
+            self.read_budgets(budget_terms=['ubar', 'vbar'], overwrite=True)  
+            u = self.budget['ubar']
+            v = self.budget['vbar']
 
         yaw = self.yaw * np.pi / 180  # yaw in radians
-        new_ubar = self.budget['ubar'] * np.cos(yaw) - self.budget['vbar'] * np.sin(yaw)
-        new_vbar = self.budget['ubar'] * np.sin(yaw) + self.budget['vbar'] * np.cos(yaw)
+        new_ubar = u * np.cos(yaw) - v * np.sin(yaw)
+        new_vbar = u * np.sin(yaw) + v * np.cos(yaw)
 
         # overwrite
 
@@ -113,8 +121,12 @@ class YawIO(pio.BudgetIO):
             print("Rotated ubar and vbar fields to align with the freestream. ")
 
         if overwrite: 
-            self.budget['ubar'] = new_ubar
-            self.budget['vbar'] = new_vbar
+            if load_fields: 
+                self.field['u'] = new_ubar
+                self.field['v'] = new_vbar
+            else: 
+                self.budget['ubar'] = new_ubar
+                self.budget['vbar'] = new_vbar
 
         else: 
             return (new_ubar, new_vbar)
