@@ -123,12 +123,6 @@ class BudgetIO():
         """
 
         # Begin with keyword arguments - initialize if these were passed in
-        if all(x in kwargs for x in ['runid', 'Lx', 'Ly', 'Lz']): 
-            self.runid = kwargs['runid']
-            self.Lx = kwargs['Lx']
-            self.Ly = kwargs['Ly']
-            self.Lz = kwargs['Lz']  
-            
         for kwarg in kwargs: 
             if kwarg in ['runid', 'Lx', 'Ly', 'Lz']: 
                 self.__dict__[kwarg] = kwargs[kwarg]
@@ -137,7 +131,10 @@ class BudgetIO():
         try: 
             self._read_inputfile(**kwargs)
         except FileNotFoundError as err:  # TODO fix this
-            warnings.warn("BudgetIO: Problem reading input file. ")
+            warnings.warn("_init_padeops(): Could not find input file. ")
+            print(err)
+        except IndexError as err: 
+            warnings.warn("_init_padeops(): Could not find input file. ")
             print(err)
 
         # default time ID for initialization
@@ -147,7 +144,7 @@ class BudgetIO():
             self.tidx = kwargs['tidx']
 
         # READ TURBINES
-        if self.associate_nml == True: 
+        if self.associate_nml: 
             turb_dir = self.input_nml['windturbines']['turbinfodir']
             ADM_type = self.input_nml['windturbines']['adm_type']
             num_turbines = self.input_nml['windturbines']['num_turbines']
@@ -158,7 +155,7 @@ class BudgetIO():
             self.associate_turbines = True
             
             if num_turbines == 1: 
-                if 'normalize_origin' in kwargs and kwargs['normalize_origin']: 
+                if 'normalize_origin' in kwargs and not kwargs['normalize_origin']: 
                     print("One turbine found, but keeping domain coordinates")
                 else: 
                     if self.verbose: 
@@ -173,6 +170,9 @@ class BudgetIO():
         # may throw OSError
         
         # TODO this may all be in the input file. 
+        
+        if 'runid' not in self.__dict__:
+            raise AttributeError("No RunID found. To explicitly pass one in, use kwarg: runid=")
         
         info_fname = self.dir_name + '/Run{:02d}_info_t{:06d}.out'.format(self.runid, self.tidx)
         self.info = np.genfromtxt(info_fname, dtype=None)
@@ -192,19 +192,27 @@ class BudgetIO():
         self.field = {}
         
         try: 
-            self.last_tidx = self.unique_budget_tidx()  # last tidx in the run with budgets
+            self.last_tidx = self.unique_tidx(return_last=True)  # last tidx in the run with fields
         except ValueError as e: 
-            warnings.warn("_init_padeops(): No budget files found!")
-            # returning here is probably OK? 
+            warnings.warn("_init_padeops(): No field files found!")
+            if self.verbose: 
+                print("\tNo field files found, returning before reading budgets.")
             return
-        
-        self.last_n = self.last_budget_n()  # last tidx with an associated budget
         
         # The following are initialized as the final saved instanteous field and budget: 
         self.field_tidx = self.last_tidx
         
-        self.all_budget_tidx = self.unique_budget_tidx(return_last=False)
-        self.budget_tidx = self.last_tidx  # but may be changed by the user
+        try: 
+            self.all_budget_tidx = self.unique_budget_tidx(return_last=False)
+            self.associate_budget = True
+        except ValueError as e: 
+            warnings.warn("_init_padeops(): No budget files found!")
+            if self.verbose: 
+                print("\tNo budget files found, returning before linking budgets.")
+            return
+        
+        self.last_n = self.last_budget_n()  # last tidx with an associated budget
+        self.budget_tidx = self.unique_budget_tidx()  # but may be changed by the user
         self.budget_n = self.last_n
         
     
@@ -518,14 +526,17 @@ class BudgetIO():
         # parse tidx
         if tidx is None: 
             tidx = self.last_tidx
+            
+        # update self.time and self.tidx: 
+        self.tidx = tidx
+        
+        info_fname = self.dir_name + '/Run{:02d}_info_t{:06d}.out'.format(self.runid, self.tidx)
+        self.info = np.genfromtxt(info_fname, dtype=None)
+        self.time = self.info[0]
         
         # the following is very similar to PadeOpsViz.ReadVelocities()
         
-        for term in terms: 
-            info_fname = self.dir_name + '/Run{:02d}_info_t{:06d}.out'.format(self.runid, tidx)
-            info = np.genfromtxt(info_fname, dtype=None)
-            self.time = info[0]  # update time field
-            
+        for term in terms:             
             fname = self.dir_name + '/Run{:02d}_{:s}_t{:06d}.out'.format(self.runid, dict_match[term], tidx)
             tmp = np.fromfile(fname, dtype=np.dtype(np.float64), count=-1)
             self.field[term] = tmp.reshape((self.nx,self.ny,self.nz), order='F')  # reshape into a 3D array
@@ -573,14 +584,13 @@ class BudgetIO():
         """
         
         if not self.associate_budget: 
-            raise AttributeError("read_budgets(): No budgets linked. ")
+           raise AttributeError("read_budgets(): No budgets linked. ")
         
         # we need to handle computed quantities differently... 
         if any(t in ['uwake', 'vwake', 'wwake'] for t in budget_terms): 
             self.calc_wake()
             
-            self.associate_budget = True
-            if self.verbose > 0: 
+            if self.verbose: 
                 print("read_budgets: Successfully loaded wake budgets. ")
 
 
@@ -602,7 +612,6 @@ class BudgetIO():
         elif self.associate_npz: 
             self._read_budgets_npz(key_subset, mmap=mmap)
         
-        self.associate_budget = True
         if self.verbose and len(key_subset) > 0: 
             print("read_budgets: Successfully loaded budgets. ")
         
@@ -613,7 +622,7 @@ class BudgetIO():
         """
         
         if tidx is None: 
-            tidx = self.last_tidx
+            tidx = self.budget_tidx
             
         elif tidx not in self.all_budget_tidx: 
             # find the nearest that actually exists
@@ -624,11 +633,11 @@ class BudgetIO():
             tidx = closest_tidx 
             
         # update self.time and self.tidx: 
-        self.tidx = tidx
+#         self.tidx = tidx
         
-        info_fname = self.dir_name + '/Run{:02d}_info_t{:06d}.out'.format(self.runid, self.tidx)
-        self.info = np.genfromtxt(info_fname, dtype=None)
-        self.time = self.info[0]
+#         info_fname = self.dir_name + '/Run{:02d}_info_t{:06d}.out'.format(self.runid, self.tidx)
+#         self.info = np.genfromtxt(info_fname, dtype=None)
+#         self.time = self.info[0]
 
         # these lines are almost verbatim from PadeOpsViz.py
         for key in key_subset:
@@ -697,7 +706,6 @@ class BudgetIO():
             warnings.warn("keyword argument budget_terms must be either 'default', 'all', or a list.")
             return {}  # empty dictionary
 
-        
         # parse through terms: they are either 1) valid, 2) missing (but valid keys), or 3) invalid (not in BudgetIO.key)
 
         existing_keys = self.existing_terms(include_wakes=include_wakes)
@@ -717,7 +725,6 @@ class BudgetIO():
 
         # generate the key
         key_subset = {key: BudgetIO.key[key] for key in valid_terms}
-
         
         # warn the user if some requested terms did not exist
         if len(key_subset) == 0: 
@@ -827,7 +834,9 @@ class BudgetIO():
             print("calc_wake(): Computed wake velocities. ")
 
     
-    def slice(self, budget_terms=None, field=None, tidx=None, xlim=None, ylim=None, zlim=None, overwrite=False): 
+    def slice(self, budget_terms=None, field=None, tidx=None, 
+              xlim=None, ylim=None, zlim=None, 
+              overwrite=False, round_extent=True): 
         """
         Returns a slice of the requested budget term(s) as a dictionary. 
 
@@ -839,6 +848,7 @@ class BudgetIO():
         xlim, ylim, zlim (tuple) : in physical domain coordinates, the slice limits. If an integer is given, then the 
             dimension of the slice will be reduced by one. If None is given (default), then the entire domain extent is sliced. 
         overwrite (bool) : Overwrites loaded budgets, see read_budgets(). Default True
+        round_extent (bool) : Rounds extents to the nearest integer. Default True
         
         Returns
         -------
@@ -884,7 +894,10 @@ class BudgetIO():
             if len(slices[term]) > 1:  # if this is actually a slice (not a number), then add it to the extents
                 ext += [np.min(slices[term]), np.max(slices[term])]
         
-        slices['extent'] = ext
+        if round_extent: 
+            slices['extent'] = np.array(ext).round()
+        else: 
+            slices['extent'] = np.array(ext)
 
         return slices
 
@@ -965,9 +978,9 @@ class BudgetIO():
         runid = self.runid
         
         # searches for the formatting *_t(\d+)* in all filenames
-        t_list = [int(re.findall('Run{:02d}.*_t(\d+).*'.format(runid), name)[0]) 
+        t_list = [int(re.findall('Run{:02d}.*_t(\d+).*.out'.format(runid), name)[0]) 
                   for name in filenames 
-                  if re.findall('Run{:02d}.*_t(\d+).*'.format(runid), name)]
+                  if re.findall('Run{:02d}.*_t(\d+).*.out'.format(runid), name)]
         
         if return_last: 
             return np.max(t_list)
@@ -995,6 +1008,9 @@ class BudgetIO():
         t_list = [int(re.findall('Run{:02d}.*budget.*_t(\d+).*'.format(runid), name)[0]) 
                   for name in filenames 
                   if re.findall('Run{:02d}.*budget.*_t(\d+).*'.format(runid), name)]
+        
+        if len(t_list) == 0: 
+            raise ValueError("No budget times found. ")
         
         if return_last: 
             return np.max(t_list)
@@ -1285,18 +1301,19 @@ class BudgetIO():
         return sl
     
     
-    def read_turb_power(self, tidx=None, turb=1, steady=True): 
+    def read_turb_power(self, tidx=None, turb=1, steady=True, nondim=False): 
         """
         Reads the turbine power from the output file *.pow. 
 
         tidx (int) : time ID to read turbine power from. Default: calls self.unique_budget_tidx()
         turb (int) : Turbine number. Default 1
         steady (bool) : Averages results if True. If False, returns an array containing the contents of `*.pow`. 
+        nondim (bool) : Non-dimensionalizes the output power. This applies to ADM Type 5, and to any other
+            turbine model that outputs dimensional power (0.5*rho*u^3*A*C_P)
         """
-        
         if tidx is None: 
             try: 
-                tidx = self.unique_budget_tidx()
+                tidx = self.last_tidx
             except ValueError as e:   # TODO - Fix this!! 
                 tidx = self.unique_tidx(return_last=True)
         
@@ -1305,11 +1322,21 @@ class BudgetIO():
             print("  Reading", fname)
             
         power = np.genfromtxt(fname, dtype=float)
+                
+        pnormfact = 1.
+        if nondim: 
+            try: 
+                pnormfact = 0.5*np.pi/4*self.turbineArray.diam**2
+            except AttributeError as e: 
+                print(e)
+                print("Tried to normalize power, but failed. Perhaps there is more than one turbine in the simulation?")
+
+        power /= pnormfact
 
         if steady: 
             return np.mean(power)
 
-        return power  # this is an array
+        return power/pnormfact  # this is an array
 
 
 if __name__ == "__main__": 
