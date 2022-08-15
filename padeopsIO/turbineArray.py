@@ -73,7 +73,12 @@ class TurbineArray():
         if self.num_turbines == 1: 
             if self.verbose: 
                 print("\tAdding convenience variables...")
-                
+            
+            # initialize some defaults (these may not be correct!)
+            self.thickness = 1.5
+            self.usecorrection = False
+            self.filterwidth = 0.5
+            
             # make the variables more accessible
             for key in self.array[0]['actuator_disk'].keys(): 
                 self.__dict__[key] = self.array[0]['actuator_disk'][key]
