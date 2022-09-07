@@ -168,17 +168,21 @@ class Filtered_ADM(object):
         return 1./M_inv
 
 
-    def approx_M(self, delta=None): 
+    def approx_M(self, delta=None, CT=None): 
         """
         Taylor series approximation to M from equation (26)
 
         Parameters
         ----------
         delta (array) : if provided, uses the given delta instead of self.delta
+        CT (array) : if provided, uses the given CT' value instead of self.CT
         """
 
         if delta is None: 
             delta = self.delta
+            
+        if CT is None: 
+            CT = self.CT
         
-        return 1 / (1 + self.CT/4 * delta/self.R/np.sqrt(3*np.pi))
+        return 1 / (1 + CT/4 * delta/self.R/np.sqrt(3*np.pi))
 
