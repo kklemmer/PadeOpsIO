@@ -85,6 +85,17 @@ class TurbineArray():
         
         if self.verbose: 
             print("TurbineArray: Initialized from", turb_dir)
+            
+    
+    def todict(self): 
+        """
+        Converts self.__dict__ into a dictionary with no namelists. 
+        """
+
+        ret = self.__dict__.copy()
+        ret['array'] = ret['array'][0].todict().copy()
+        return ret
+
         
 
 if __name__ == "__main__": 
