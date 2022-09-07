@@ -482,10 +482,10 @@ class BudgetIO():
             
             if self.associate_turbines: 
                 meta['auxiliary'].update({
-                    'turbineArray': self.turbineArray
+                    'turbineArray': self.turbineArray.todict()
                 })
         else: 
-            meta = self.input_nml.copy()  # copy is probably unnecessary
+            meta = self.input_nml.todict().copy()  # copy is probably unnecessary
         
         filename = write_dir + os.sep + self.filename + '_metadata.npy'
         np.save(filename, meta)
