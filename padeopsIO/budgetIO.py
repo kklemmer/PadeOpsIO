@@ -81,7 +81,7 @@ class BudgetIO():
         self.associate_padeops = False
         self.associate_npz = False
         self.associate_nml = False
-        self.associate_budget = False
+        self.associate_budgets = False
         self.associate_grid = False
         self.associate_field = False
         self.associate_turbines = False
@@ -204,7 +204,7 @@ class BudgetIO():
         
         try: 
             self.all_budget_tidx = self.unique_budget_tidx(return_last=False)
-            self.associate_budget = True
+            self.associate_budgets = True
         except ValueError as e: 
             warnings.warn("_init_padeops(): No budget files found!")
             if self.verbose: 
@@ -340,7 +340,7 @@ class BudgetIO():
         self.associate_grid = True
 
 
-    def _init_npz(self): 
+    def _init_npz(self, **kwargs): 
         """
         Initializes the BudgetIO object by attempting to read .npz files saved from a previous BudgetIO object 
         from write_npz(). 
@@ -355,6 +355,8 @@ class BudgetIO():
         budget_files = glob.glob(self.dir_name + os.sep + '*_budgets.npz')
         if len(budget_files) == 0: 
             warnings.warn("No associated budget files found")
+        else: 
+            self.associate_budgets = True
         
         # load metadata: expects a file named <filename>_metadata.npy
         
@@ -364,10 +366,15 @@ class BudgetIO():
         except FileNotFoundError as e: 
             print(e)
             return
-
+        
         self.associate_nml = True
         
         self._convenience_variables()  # also loads the grid
+        
+        # load turbine file
+        if 'turbineArray' in self.input_nml['auxiliary']: 
+            self.turbineArray = self.input_nml['auxiliary']['turbineArray']
+            self.associate_turbines = True
         
         if self.verbose: 
             print('_init_npz(): BudgetIO initialized using .npz files.')
@@ -398,17 +405,12 @@ class BudgetIO():
         parameters 
         ----------
         write_dir (str) : location to write .npz files. Default: same directory as self.outputdir_name
-        budget_terms (dict or str) : dictionary of terms for each budget. Dictionaries should be formatted 
-                {<budget #> : [ <list terms>], 
-                 <next budget #> : [ <next list terms>]} 
-            Alternatively, terms can be a string 'default', which uses the dictionary: 
-                {0: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 
-                 1: 'all'}
-            or budget_terms can also be 'all', which loads all existing budgets and all existing terms for each budget. 
+        budget_terms : list of budget terms to be saved (see ._parse_budget_terms()). Alternatively, 
+            use 'current' to save the budget terms that are currently loaded. 
         filename (str) : calls self.set_filename()
         """
         
-        if not self.associate_budget: 
+        if not self.associate_budgets: 
             warnings.warn('write_npz(): No budgets associated! ') 
             return 
         
@@ -477,6 +479,11 @@ class BudgetIO():
                                  'last_tidx': self.last_tidx
                                  # add more things here
                                 }
+            
+            if self.associate_turbines: 
+                meta['auxiliary'].update({
+                    'turbineArray': self.turbineArray
+                })
         else: 
             meta = self.input_nml.copy()  # copy is probably unnecessary
         
@@ -554,14 +561,14 @@ class BudgetIO():
         -------
         keys (list) : list of cleared budgets. 
         """
-        if not self.associate_budget: 
+        if not self.associate_budgets: 
             if self.verbose: 
                 print('clear_budgets(): no budgets to clear. ')
             return
         
         loaded_keys = self.budget.keys()
         self.budget = {}  # empty dictionary
-        self.associate_budget = False
+#         self.associate_budgets = False
 
         if self.verbose: 
             print('clear_budgets(): Cleared loaded budgets: {}'.format(loaded_keys))
@@ -583,7 +590,7 @@ class BudgetIO():
             reading from PadeOps output files; .npz are limited to one saved tidx. 
         """
         
-        if not self.associate_budget: 
+        if not self.associate_budgets: 
            raise AttributeError("read_budgets(): No budgets linked. ")
         
         # we need to handle computed quantities differently... 
