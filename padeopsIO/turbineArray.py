@@ -19,7 +19,7 @@ class TurbineArray():
     # TODO fix class docstring
     """
     
-    def __init__(self, turb_dir, num_turbines=None, ADM_type=2, verbose=False): 
+    def __init__(self, turb_dir=None, num_turbines=None, ADM_type=2, init_dict=None, verbose=False): 
         """
         Constructor function for a TurbineArray class
         
@@ -35,6 +35,16 @@ class TurbineArray():
         -------
         TurbineArray class instance
         """
+
+        # this initializes from a dictionary output by todict()
+        if init_dict is not None: 
+            self.fromdict(init_dict)
+
+            self.verbose = verbose
+            if self.verbose: 
+                print("TurbineArray: Initialized from", turb_dir)
+
+            return
         
         self.turb_dir = turb_dir
         self.ADM_type = ADM_type
@@ -85,7 +95,14 @@ class TurbineArray():
         
         if self.verbose: 
             print("TurbineArray: Initialized from", turb_dir)
-            
+    
+    def fromdict(self, init_dict): 
+        """
+        Converts a dictionary object given by todict() back into a TurbineArray object. 
+        """
+        for key in init_dict.keys(): 
+            self.__dict__[key] = init_dict[key]
+
     
     def todict(self): 
         """

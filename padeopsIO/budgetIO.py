@@ -154,15 +154,15 @@ class BudgetIO():
                                                           verbose=self.verbose)
             self.associate_turbines = True
             
-            if num_turbines == 1: 
-                if 'normalize_origin' in kwargs and not kwargs['normalize_origin']: 
-                    print("One turbine found, but keeping domain coordinates")
-                else: 
-                    if self.verbose: 
-                        print("Reading 1 turbine, normalizing origin. To turn off, initialize with `normalize_origin=False`")
-                    self.xLine -= self.turbineArray.xloc
-                    self.yLine -= self.turbineArray.yloc
-                    self.zLine -= self.turbineArray.zloc
+            # if num_turbines == 1: 
+            #     if 'normalize_origin' in kwargs and not kwargs['normalize_origin']: 
+            #         print("One turbine found, but keeping domain coordinates")
+            #     else: 
+            #         if self.verbose: 
+            #             print("Reading 1 turbine, normalizing origin. To turn off, initialize with `normalize_origin=False`")
+            #         self.xLine -= self.turbineArray.xloc
+            #         self.yLine -= self.turbineArray.yloc
+            #         self.zLine -= self.turbineArray.zloc
 
         # These lines are taken almost verbatim from PadeOpsViz.py
 
@@ -183,7 +183,7 @@ class BudgetIO():
         self.nz = int(self.info[3])
 
         if not self.associate_grid: 
-            self._load_grid()
+            self._load_grid(**kwargs)
 
         # object is reading from PadeOps output files directly
         if self.verbose: 
@@ -243,10 +243,10 @@ class BudgetIO():
                     input_nml = f90nml.read(inputfile) 
                     if self.verbose: 
                         print('_read_inputfile(): trying inputfile ', inputfile)
-                    
+
                     if input_nml['IO']['runid'] == kwargs['runid']: 
                         self.input_nml = input_nml
-                        self._convenience_variables()  # make some variables in the metadata more accessible
+                        self._convenience_variables(**kwargs)  # make some variables in the metadata more accessible
                         self.associate_nml = True  # successfully loaded input file
                         return
                         
@@ -267,7 +267,7 @@ class BudgetIO():
             print("Reading namelist file from {}".format(inputfile_ls[0]))
             
         self.input_nml = f90nml.read(inputfile_ls[0])
-        self._convenience_variables()  # make some variables in the metadata more accessible
+        self._convenience_variables(**kwargs)  # make some variables in the metadata more accessible
         self.associate_nml = True  # successfully loaded input file
         
         # BUDGET VARIABLES: 
@@ -278,7 +278,7 @@ class BudgetIO():
 #         self.last_n = self.last_budget_n() 
 
         
-    def _convenience_variables(self): 
+    def _convenience_variables(self, **kwargs): 
         """
         Aside from reading in the Namelist, which has all of the metadata, also make some
         parameters more accessible. 
@@ -300,7 +300,7 @@ class BudgetIO():
         self.Lz = self.input_nml['ad_coriolisinput']['lz']
 
         if not self.associate_grid: 
-            self._load_grid()
+            self._load_grid(**kwargs)
         
         # TURBINE VARIABLES: 
         self.nTurb = self.input_nml['windturbines']['num_turbines']
@@ -317,7 +317,7 @@ class BudgetIO():
             self.Ro = np.Inf
 
     
-    def _load_grid(self): 
+    def _load_grid(self, **kwargs): 
         """
         Creates dx, dy, dz, and xLine, yLine, zLine variables. 
         
@@ -338,6 +338,17 @@ class BudgetIO():
         self.zLine = np.linspace(self.dz/2,self.Lz-(self.dz/2),self.nz)
 
         self.associate_grid = True
+
+        if self.associate_turbines: 
+            if self.turbineArray.num_turbines == 1: 
+                if 'normalize_origin' in kwargs and not kwargs['normalize_origin']: 
+                    print("One turbine found, but keeping domain coordinates")
+                else: 
+                    if self.verbose: 
+                        print("Reading 1 turbine, normalizing origin. To turn off, initialize with `normalize_origin=False`")
+                    self.xLine -= self.turbineArray.xloc
+                    self.yLine -= self.turbineArray.yloc
+                    self.zLine -= self.turbineArray.zloc
 
 
     def _init_npz(self, **kwargs): 
@@ -367,14 +378,13 @@ class BudgetIO():
             print(e)
             return
         
-        self.associate_nml = True
-        
-        self._convenience_variables()  # also loads the grid
-        
-        # load turbine file
+        # attempt to load turbine file - need this before loading grid
         if 'turbineArray' in self.input_nml['auxiliary']: 
-            self.turbineArray = self.input_nml['auxiliary']['turbineArray']
+            self.turbineArray = turbineArray.TurbineArray(init_dict=self.input_nml['auxiliary']['turbineArray'])
             self.associate_turbines = True
+        
+        self._convenience_variables(**kwargs)  # also loads the grid
+        self.associate_nml = True
         
         if self.verbose: 
             print('_init_npz(): BudgetIO initialized using .npz files.')
