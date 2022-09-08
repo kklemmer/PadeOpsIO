@@ -1,4 +1,5 @@
 # this comes directly from https://gist.github.com/GhostofGoes/94580e76cd251972b15b4821c8a06f59
+
 # Editors
 .vscode/
 .idea/
@@ -127,3 +128,8 @@ dmypy.json
 
 # tests
 .tests/
+test_data/
+padeopsIO/test*
+test*
+
+
