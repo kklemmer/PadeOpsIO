@@ -41,7 +41,7 @@ class YawIO(pio.BudgetIO):
         
         if tidx is None: 
             try: 
-                tidx = self.unique_budget_tidx()
+                tidx = self.last_tidx
             except ValueError as e:   # TODO - Fix this!! 
                 tidx = self.unique_tidx(return_last=True)
         
@@ -90,7 +90,7 @@ class YawIO(pio.BudgetIO):
             return ret
         
         
-    def rotate_uv(self, overwrite=True, load_fields=False): 
+    def rotate_uv(self, overwrite=True, load_fields=False, u=None, v=None): 
         """
         Rotate the ubar and vbar budget field. Loads 'ubar', 'vbar' in the YawIO object. 
         
@@ -102,14 +102,19 @@ class YawIO(pio.BudgetIO):
         """
 
         # always reload u, v, to make sure this isn't a doubly-rotated field
-        if load_fields: 
-            self.read_fields(field_terms=['u', 'v']) # TODO: there is no overwrite check on this! 
-            u = self.field['u']
-            v = self.field['v']
+        if u is None and v is None: 
+            if load_fields: 
+                self.read_fields(field_terms=['u', 'v']) # TODO: there is no overwrite check on this! 
+                u = self.field['u']
+                v = self.field['v']
+            else: 
+                self.read_budgets(budget_terms=['ubar', 'vbar'], overwrite=True)  
+                u = self.budget['ubar']
+                v = self.budget['vbar']
         else: 
-            self.read_budgets(budget_terms=['ubar', 'vbar'], overwrite=True)  
-            u = self.budget['ubar']
-            v = self.budget['vbar']
+            overwrite=False
+            if self.verbose: 
+                print('\trotate_uv(): Using input u, v fields. ')
 
         yaw = self.yaw * np.pi / 180  # yaw in radians
         new_ubar = u * np.cos(yaw) - v * np.sin(yaw)
