@@ -851,7 +851,7 @@ class BudgetIO():
             print("calc_wake(): Computed wake velocities. ")
 
     
-    def slice(self, budget_terms=None, field=None, tidx=None, 
+    def slice(self, budget_terms=None, field=None, sl=None, keys=None, tidx=None, 
               xlim=None, ylim=None, zlim=None, 
               overwrite=False, round_extent=True): 
         """
@@ -861,6 +861,8 @@ class BudgetIO():
         ---------
         budget_terms (list or string) : budget term or terms to slice from. If None, expects a value for `field`
         field (arraylike or dict of arraylike) : fields similar to self.budget[]
+        sl (slice from self.slice()) : dictionary of fields to be sliced into again. 
+        keys (fields in slice `sl`) : keys to slice into from the input slice `sl`
         tidx (int) : time ID to read budgets from, see read_budgets(). Default None
         xlim, ylim, zlim (tuple) : in physical domain coordinates, the slice limits. If an integer is given, then the 
             dimension of the slice will be reduced by one. If None is given (default), then the entire domain extent is sliced. 
@@ -874,10 +876,21 @@ class BudgetIO():
         
         """
 
-        xid, yid, zid = self.get_xids(x=xlim, y=ylim, z=zlim, return_none=True, return_slice=True)
+        if sl is None: 
+            xid, yid, zid = self.get_xids(x=xlim, y=ylim, z=zlim, return_none=True, return_slice=True)
+            xLine = self.xLine
+            yLine = self.yLine
+            zLine = self.zLine
+        else: 
+            xid, yid, zid = self.get_xids(x=xlim, y=ylim, z=zlim, 
+                                          x_ax=sl['x'], y_ax=sl['y'], z_ax=sl['z'], 
+                                          return_none=True, return_slice=True)
+            xLine = sl['x']
+            yLine = sl['y']
+            zLine = sl['z']
 
         slices = {}  # build from empty dict
-        
+
         if field is not None: 
             # slice the given field
             
@@ -887,7 +900,7 @@ class BudgetIO():
                     slices[key] = np.squeeze(field[key][xid, yid, zid])
             else: 
                 slices['field'] = np.squeeze(field[xid, yid, zid])
-                
+
         elif budget_terms is not None: 
             # read budgets
             key_subset = self._parse_budget_terms(budget_terms)
@@ -895,15 +908,25 @@ class BudgetIO():
 
             for term in key_subset: 
                 slices[term] = np.squeeze(self.budget[term][xid, yid, zid])  
+
+        elif keys is not None and sl is not None: 
+            # slice into slices
+
+            if type(keys) == list: 
+                for key in keys: 
+                    slices[key] = np.squeeze(sl[key][xid, yid, zid])
+
+            else: 
+                slices[key] = np.squeeze(sl[xid, yid, zid])
                 
         else: 
             warnings.warn("BudgetIO.slice(): either budget_terms= or field= must be initialized.")
             return None
         
         # also save domain information
-        slices['x'] = self.xLine[xid]
-        slices['y'] = self.yLine[yid]
-        slices['z'] = self.zLine[zid]
+        slices['x'] = xLine[xid]
+        slices['y'] = yLine[yid]
+        slices['z'] = zLine[zid]
         
         # build and save the extents, either in 1D, 2D, or 3D
         ext = []
