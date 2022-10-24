@@ -3,7 +3,7 @@
 PadeOpsIO is a tool for loading, visualizing, and analyzing data from [PadeOps](https://github.com/FPAL-Stanford-University/PadeOps), an LES and DNS box code. 
 
 ## Dependencies
-------
+
 Aside from standard python library packages, PadeOpsIO requries: <br>
 * `numpy` <br>
 * `scipy` <br>
