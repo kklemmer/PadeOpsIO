@@ -154,16 +154,6 @@ class BudgetIO():
                                                           verbose=self.verbose)
             self.associate_turbines = True
             
-            # if num_turbines == 1: 
-            #     if 'normalize_origin' in kwargs and not kwargs['normalize_origin']: 
-            #         print("One turbine found, but keeping domain coordinates")
-            #     else: 
-            #         if self.verbose: 
-            #             print("Reading 1 turbine, normalizing origin. To turn off, initialize with `normalize_origin=False`")
-            #         self.xLine -= self.turbineArray.xloc
-            #         self.yLine -= self.turbineArray.yloc
-            #         self.zLine -= self.turbineArray.zloc
-
         # These lines are taken almost verbatim from PadeOpsViz.py
 
         # read accompanying info file
