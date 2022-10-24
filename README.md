@@ -20,7 +20,7 @@ If the module needs to be added to the system path, use `sys.path.append`.
 
 ## Usage
 
-PadeOpsIO is used for visualization of and analysis for output data from PadeOps. For more, see the [quick start](https://github.com/kirbyh/PadeOpsIO/blob/KirbyH-dev/padeopsIO/padeopsIO_quickstart.ipynb). 
+PadeOpsIO is used for visualization of and analysis for output data from PadeOps. For more, see the [quick start](https://github.com/kirbyh/PadeOpsIO/blob/main/padeopsIO/padeopsIO_quickstart.ipynb). 
 
 Data can be instanteous data: 
 
