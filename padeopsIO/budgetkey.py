@@ -33,6 +33,34 @@ class bidict(dict):
         super(bidict, self).__delitem__(key)
 
 
+def key_search_r(nested_dict, key):
+    """
+    Performs a recursive search for the dictionary key `key` in any of the dictionaries contained 
+    inside `nested_dict`. Returns the value of nested_dict[key] at the first match. 
+    
+    Parameters
+    ----------
+    nested_dict (dict-like) : dictionary [possibly of dictionaries]
+    key (str) : dictionary key to match
+    
+    Returns
+    -------
+    nested_dict[key] if successful, None otherwise. 
+    """
+    
+    try: 
+        for k in nested_dict.keys(): 
+            if k == key: 
+                return nested_dict[k]
+            else: 
+                res = key_search_r(nested_dict[k], key)
+                if res is not None: 
+                    return res
+        
+    except AttributeError as e: 
+        return
+    
+    
 def get_key(): 
     """
     Returns a bidirectional hash table between colloquial string values for budget terms and 
@@ -196,6 +224,8 @@ def key_labels():
         'y': "$y/D$", 
         'z': "$z/D$", 
         't': "$t$"
+        # RANS BUDGETS - TODO
+#         'ududx': '$\\bar{u}
         }
     
     return key
