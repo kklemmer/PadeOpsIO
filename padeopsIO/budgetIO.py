@@ -144,7 +144,8 @@ class BudgetIO():
             self.tidx = kwargs['tidx']
 
         # READ TURBINES
-        if self.associate_nml: 
+        # only do this if usewindturbines = True
+        if self.associate_nml and self.input_nml['windturbines']['usewindturbines']: 
             turb_dir = self.input_nml['windturbines']['turbinfodir']
             ADM_type = self.input_nml['windturbines']['adm_type']
             num_turbines = self.input_nml['windturbines']['num_turbines']
@@ -175,12 +176,19 @@ class BudgetIO():
             raise AttributeError("No RunID found. To explicitly pass one in, use kwarg: runid=")
         
         info_fname = self.dir_name + '/Run{:02d}_info_t{:06d}.out'.format(self.runid, self.tidx)
-        self.info = np.genfromtxt(info_fname, dtype=None)
-        self.time = self.info[0]
+        # self.info = np.genfromtxt(info_fname, dtype=None)  
+        # TODO: fix reading .info files
+        self.time = 0  # self.info[0]
         
-        self.nx = int(self.info[1])
-        self.ny = int(self.info[2])
-        self.nz = int(self.info[3])
+        if self.associate_nml: 
+            self.nx = self.input_nml['input']['nx']
+            self.ny = self.input_nml['input']['ny']
+            self.nz = self.input_nml['input']['nz']
+        else: 
+            self.nx = int(self.info[1])
+            self.ny = int(self.info[2])
+            self.nz = int(self.info[3])
+        
 
         if not self.associate_grid: 
             self._load_grid()
@@ -292,12 +300,24 @@ class BudgetIO():
         self.runid = self.input_nml['io']['runid']
 
         # DOMAIN VARIABLES: 
-        self.nx = self.input_nml['input']['nx']
-        self.ny = self.input_nml['input']['ny']
-        self.nz = self.input_nml['input']['nz']
-        self.Lx = self.input_nml['ad_coriolisinput']['lx']
-        self.Ly = self.input_nml['ad_coriolisinput']['ly']
-        self.Lz = self.input_nml['ad_coriolisinput']['lz']
+        term_name = ['nx', 'ny', 'nz', 'Lx', 'Ly', 'Lz'] 
+        term_search = ['nx', 'ny', 'nz', 'lx', 'ly', 'lz']  # same ordering
+        
+        for tname, tsearch in zip(term_name, term_search): 
+            self.__dict__[tname] = budgetkey.key_search_r(self.input_nml, tsearch)
+            
+#         self.nx = self.input_nml['input']['nx']
+#         self.ny = self.input_nml['input']['ny']
+#         self.nz = self.input_nml['input']['nz']
+#         try: 
+#             self.Lx = pio.key_search_r(self.input_nml, 'nx')  #self.input_nml['ad_coriolisinput']['lx']
+#             self.Ly = self.input_nml['ad_coriolisinput']['ly']
+#             self.Lz = self.input_nml['ad_coriolisinput']['lz']
+#         except: 
+#             print("Could not read Lx, Ly, Lz")
+#             self.Lx = 0
+#             self.Ly = 0
+#             self.Lz = 0
 
         if not self.associate_grid: 
             self._load_grid()
