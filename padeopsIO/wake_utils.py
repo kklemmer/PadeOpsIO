@@ -289,6 +289,38 @@ def partialz(field, dz):
     return dfdz
 
 
+def partialr(fieldyz, dy, dz, theta): 
+    """
+    Partial derivates in the radial direction in cylindrical coordinates. 
+    """
+    dim = len(fieldyz.shape)
+    if dim == 2: 
+        fieldyz = fieldyz[None, :, :]  # append x-axis
+    
+    ddy = pio.partialy(fieldyz, dy)
+    ddz = pio.partialz(fieldyz, dz)
+    
+    ddr = ddy * np.cos(theta) + ddz * np.sin(theta)
+    return np.squeeze(ddr)
+
+
+def partialt(fieldyz, dy, dz, theta): 
+    """
+    Partial derivates of a scalar field variable in the theta direction. 
+    
+    This function actually computes 1/r (d/dtheta)
+    """
+    dim = len(fieldyz.shape)
+    if dim == 2: 
+        fieldyz = fieldyz[None, :, :]  # append x-axis
+
+    ddy = pio.partialy(fieldyz, dy)
+    ddz = pio.partialz(fieldyz, dz)
+    
+    ddt = -ddy * np.sin(theta) + ddz * np.cos(theta)
+    return np.squeeze(ddt)
+
+
 # second derivatives in x, y, z
 def partialx2(field, dx): 
     """
@@ -322,6 +354,97 @@ def partialz2(field, dz):
     dfdz[:, :, -1] = dfdz[:, :, -2]
     
     return dfdz
+
+
+def compute_partials(sl_dict, keys, ret=False): 
+    """
+    Computes partial derivatives in x, y, and z for 3D scalar field in `keys`
+    
+    Parameters
+    ----------
+    sl_dict (dict) : dictionary from BudgetIO.slice()
+    keys (list) : list of keys to differentiate in x, y, z
+    ret (bool) : if True, returns the computed quantities instead of appending them in the same dictionary
+    
+    Returns
+    -------
+    None (updates sl_dict)
+    """
+    
+    xi = ['dx', 'dy', 'dz']
+    ui = keys  # ui = ['ubar', 'vbar', 'wbar']
+    dxi = [partialx, partialy, partialz]
+    
+    dx = {
+        'dx': sl_dict['x'][1]-sl_dict['x'][0], 
+        'dy': sl_dict['y'][1]-sl_dict['y'][0], 
+        'dz': sl_dict['z'][1]-sl_dict['z'][0]
+    }
+
+    fstring = 'd{:s}d{:s}'
+    xs = ['x', 'y', 'z']
+    us = ui  # us = ['u', 'v', 'w']
+    newdict = {}
+
+    # duidxj = pd.DataFrame(index=ui, columns=xi)
+    for i, u in enumerate(ui): 
+        for j, x in enumerate(xi): 
+            newdict[fstring.format(us[i], xs[j])] = dxi[j](sl_dict[u], dx[x])
+            
+    if ret: 
+        return newdict
+    else: 
+        sl_dict.update({
+            key:newdict[key] for key in newdict.keys()
+        })
+    
+            
+def compute_vort(sl_dict): 
+    """
+    Computes the vorticity vector
+    """
+    # make sure the partials have already been computed
+    partial_keys = ['dubardx', 'dubardy', 'dubardz', 
+                    'dvbardx', 'dvbardy', 'dvbardz', 
+                    'dwbardx', 'dwbardy', 'dwbardz']
+    
+    if not np.all([keycheck in sl_dict.keys() for keycheck in partial_keys]): 
+        compute_partials(sl_dict, ['ubar', 'vbar','wbar'])
+    
+    # update the dictionary with vorticity terms
+    sl_dict.update({
+        'wx': sl_dict['dwbardy'] - sl_dict['dvbardz'], 
+        'wy': sl_dict['dubardz'] - sl_dict['dwbardx'], 
+        'wz': sl_dict['dvbardx'] - sl_dict['dubardy'], 
+    })
+    
+    
+# ============= polar coordinate functions ================
+
+def compute_vort_xrt(sl_dict): 
+    """
+    Transforms the vorticity vector x,y,z -> x,r,theta
+    """
+    
+    if not np.all([keycheck in sl_dict.keys() for keycheck in ['wx', 'wy', 'wz']]): 
+        compute_vort(sl_dict)
+        
+    yy, zz = np.meshgrid(sl_dict['y'], sl_dict['z'], indexing='ij')
+    theta = np.arctan2(zz, yy)
+    # append third axis for explicit broadcasting: 
+    theta = theta[None, :, :]
+
+    sl_dict.update({
+        'wr': sl_dict['wy']*np.cos(theta) + sl_dict['wz']*np.sin(theta), 
+        'wt' : -sl_dict['wy']*np.sin(theta) + sl_dict['wz']*np.cos(theta), 
+        'theta': theta
+    })
+
+    # also compute ur, utheta: 
+    sl_dict.update({
+        'ur': sl_dict['vbar']*np.cos(theta) + sl_dict['wbar']*np.sin(theta), 
+        'ut' : -sl_dict['vbar']*np.sin(theta) + sl_dict['wbar']*np.cos(theta)
+    })
 
 
 # ------------------- IO ----------------
