@@ -4,6 +4,8 @@
 
 import numpy as np
 import csv
+import os
+import padeopsIO
 
 
 def wake_centroid_2d(u_hub=None, u_wake_hub=None, y=None, thresh=0): 
@@ -88,9 +90,10 @@ def usq_mean(run, diam=1, xlim=None):
         return ubar_sq
     
     
-def rans_budgets(run, xlim=None, ylim=None, zlim=None, 
+def rans_budgets(run, xlim=None, ylim=None, zlim=None, sl=None, 
                  compute_x=True, compute_y=True, compute_z=False, 
-                 combine_terms=False, compute_residual=True): 
+                 combine_terms=False, compute_residual=True, 
+                 useconstantg=True): 
     """
     Compute RANS budgets from output data with mean fields only. 
     
@@ -100,10 +103,13 @@ def rans_budgets(run, xlim=None, ylim=None, zlim=None,
     Parameters
     ----------
     run (BudgetIO object)
+    sl (slice from BudgetIO.slice()) : optional, can be used in place of giving a run and x, y, z limits  (run still required)
     xlim, ylim, zlim : array-like, see BudgetIO.slice()
     compute_x, compute_y, compute_z (bool) : dictates which RANS budgets to compute. Default: x, y True, z False
     combine_terms (bool) : combines advection terms and turbulence terms. Default: False
     compute_residual (bool) : computes the residual pointwise. Default: True
+    useconstantg (bool) : uses constant geostrophic forcing given in the `physics` namelist if True. 
+        If not, calls _get_inflow()
     
     Returns
     -------
@@ -119,8 +125,11 @@ def rans_budgets(run, xlim=None, ylim=None, zlim=None,
 
     """
     
-    terms = ['ubar', 'vbar', 'wbar', 'pbar', 'uu', 'uv', 'uw', 'vv', 'vw', 'ww']
-    sl = run.slice(budget_terms=terms, xlim=xlim, ylim=ylim, zlim=zlim)
+    if sl is None: 
+        terms = ['ubar', 'vbar', 'wbar', 'pbar', 'uu', 'uv', 'uw', 'vv', 'vw', 'ww', 'dpdx', 'dpdy', 'dpdz']
+        sl = run.slice(budget_terms=terms, xlim=xlim, ylim=ylim, zlim=zlim, round_extent=False)
+    else: 
+        zlim = [sl['z'][0], sl['z'][-1]]
     
     # constants: 
     Ro = run.Ro
@@ -128,10 +137,13 @@ def rans_budgets(run, xlim=None, ylim=None, zlim=None,
     C1 = 2/Ro * np.sin(lat*np.pi/180)
 #     Gx = 1 
     # need to retrieve and trim the inflow profiles: 
-    Gx, Gy = run._get_inflow()
-    zids = run.get_xids(z=zlim, return_slice=True)
-    Gx = Gx[zids]
-    Gy = Gy[zids]
+    if useconstantg: 
+        Gx, Gy = [1, 0]  # TODO: GENERALIZE
+    else: 
+        Gx, Gy = run._get_inflow()
+        zids = run.get_xids(z=zlim, return_slice=True)
+        Gx = Gx[zids]
+        Gy = Gy[zids]
 
     ret = (sl, )
     
@@ -144,7 +156,7 @@ def rans_budgets(run, xlim=None, ylim=None, zlim=None,
         rans_x['ududx'] = -(sl['ubar'] * partialx(sl['ubar'], run.dx))
         rans_x['vdudy'] = -(sl['vbar'] * partialy(sl['ubar'], run.dy))
         rans_x['wdudz'] = -(sl['wbar'] * partialz(sl['ubar'], run.dz))
-        rans_x['dpdx'] = -partialx(sl['pbar'], run.dx)
+        rans_x['dpdx'] = sl['dpdx']  #-partialx(sl['pbar'], run.dx)
         rans_x['xCor'] = -C1*(Gy - sl['vbar'])
         rans_x['duudx'] = -partialx(sl['uu'], run.dx)
         rans_x['duvdy'] = -partialy(sl['uv'], run.dy)
@@ -171,7 +183,7 @@ def rans_budgets(run, xlim=None, ylim=None, zlim=None,
         rans_y['udvdx'] = -(sl['ubar'] * partialx(sl['vbar'], run.dx))
         rans_y['vdvdy'] = -(sl['vbar'] * partialy(sl['vbar'], run.dy))
         rans_y['wdvdz'] = -(sl['wbar'] * partialz(sl['vbar'], run.dz))
-        rans_y['dpdy'] = -partialy(sl['pbar'], run.dy)
+        rans_y['dpdy'] = sl['dpdy'] #-partialy(sl['pbar'], run.dy)
         rans_y['yCor'] = C1*(Gx-sl['ubar'])
         rans_y['dvudx'] = -partialx(sl['uv'], run.dx)
         rans_y['dvvdy'] = -partialy(sl['vv'], run.dy)
@@ -223,6 +235,58 @@ def rans_budgets(run, xlim=None, ylim=None, zlim=None,
     else: 
         return ret
     
+    
+def get_xids(x=None, y=None, z=None, 
+             x_ax=None, y_ax=None, z_ax=None, 
+             return_none=False, return_slice=False): 
+    """
+    COPIED from BudgetIO.py
+    
+    Translates x, y, and z limits in the physical domain to indices based on x_ax, y_ax, z_ax
+
+    Arguments
+    ---------
+    x, y, z : float or iterable (tuple, list, etc.) of physical locations to return the nearest index for
+    return_none : if True, populates output tuple with None if input is None. Default False. 
+    return_slice : if True, returns a tuple of slices instead a tuple of lists. 
+
+    Returns
+    -------
+    xid, yid, zid : list or tuple of lists with indices for the requested x, y, z, args in the order: x, y, z. 
+        If, for example, y and z are requested, then the returned tuple will have (yid, zid) lists. 
+        If only one value (float or int) is passed in for e.g. x, then an integer will be passed back in xid. 
+    """
+
+    ret = ()
+
+    # iterate through x, y, z, index matching for each term
+    for s, s_ax in zip([x, y, z], [x_ax, y_ax, z_ax]): 
+        if s is not None: 
+            if s_ax is None: 
+                raise AttributeError('Axis keyword not providede')
+                
+            if hasattr(s, '__iter__'): 
+                xids = [np.argmin(np.abs(s_ax-xval)) for xval in s]
+            else: 
+                xids = np.argmin(np.abs(s_ax-s))
+
+            if return_slice:  # append slices to the return tuple
+                ret = ret + (slice(np.min(xids), np.max(xids)+1), )
+
+            else:  # append index list to the return tuple
+                ret = ret + (xids, )
+
+        elif return_none:  # fill with None or slice(None)
+            if return_slice: 
+                ret = ret + (slice(None), )
+
+            else: 
+                ret = ret + (None, )
+
+    if len(ret)==1: 
+        return ret[0]  # don't return a length one tuple 
+    else: 
+        return ret
 
 # --------------- NUMERICS ----------------
 
@@ -350,8 +414,36 @@ def read_list(dir_name):
     run_list = []
 
     for run in runs: 
-        run_list.append(pio.BudgetIO(run[0], padeops=True, verbose=False))
+        run_list.append(padeopsIO.BudgetIO(run[0], padeops=True, verbose=False))
         
     return run_list
 
 
+def key_search_r(nested_dict, key):
+    """
+    Copied from budgetkey.py
+    
+    Performs a recursive search for the dictionary key `key` in any of the dictionaries contained 
+    inside `nested_dict`. Returns the value of nested_dict[key] at the first match. 
+    
+    Parameters
+    ----------
+    nested_dict (dict-like) : dictionary [possibly of dictionaries]
+    key (str) : dictionary key to match
+    
+    Returns
+    -------
+    nested_dict[key] if successful, None otherwise. 
+    """
+    
+    try: 
+        for k in nested_dict.keys(): 
+            if k == key: 
+                return nested_dict[k]
+            else: 
+                res = key_search_r(nested_dict[k], key)
+                if res is not None: 
+                    return res
+        
+    except AttributeError as e: 
+        return
