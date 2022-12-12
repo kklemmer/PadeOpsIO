@@ -19,10 +19,16 @@ class YawIO(pio.BudgetIO):
         super().__init__(dir_name, **kwargs)
         
         if self.associate_nml: 
-            self.yaw = self.input_nml['ad_coriolisinput']['yaw']
-            self.uInflow = self.input_nml['ad_coriolisinput']['uinflow'] * np.cos(self.yaw*np.pi/180.)
-            self.vInflow = self.input_nml['ad_coriolisinput']['uinflow'] * -np.sin(self.yaw*np.pi/180.)
-        
+            try: 
+                self.yaw = self.input_nml['ad_coriolisinput']['yaw']
+                self.uInflow = self.input_nml['ad_coriolisinput']['uinflow'] * np.cos(self.yaw*np.pi/180.)
+                self.vInflow = self.input_nml['ad_coriolisinput']['uinflow'] * -np.sin(self.yaw*np.pi/180.)
+            except KeyError as e: 
+                if self.verbose: 
+                    print(repr(e)) 
+                    print('Initializing YawIO, could not find `ad_coriolisinput` in the Namelist input.')
+                warnings.warn('Could not find `ad_coriolisinput` in the Namelist input.')
+                
         if self.verbose: 
             print("Initialized YawIO object")
 
