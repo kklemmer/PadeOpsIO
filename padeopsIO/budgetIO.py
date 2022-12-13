@@ -459,8 +459,8 @@ class BudgetIO():
             # need to parse budget_terms with the key
             key_subset = self._parse_budget_terms(budget_terms)
 
-            # load budgets
-            sl = self.slice(budget_terms=key_subset, xlim=xlim, ylim=ylim, zlim=zlim)
+        # load budgets
+        sl = self.slice(budget_terms=key_subset, xlim=xlim, ylim=ylim, zlim=zlim)
 
         # if `filename` is provided, change this in the object
         # importantly, this needs to be done AFTER reading budgets! 
