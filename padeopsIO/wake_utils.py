@@ -4,6 +4,8 @@
 
 import numpy as np
 import csv
+import os
+import padeopsIO
 
 
 def wake_centroid_2d(u_hub=None, u_wake_hub=None, y=None, thresh=0): 
@@ -88,9 +90,10 @@ def usq_mean(run, diam=1, xlim=None):
         return ubar_sq
     
     
-def rans_budgets(run, xlim=None, ylim=None, zlim=None, 
+def rans_budgets(run, xlim=None, ylim=None, zlim=None, sl=None, 
                  compute_x=True, compute_y=True, compute_z=False, 
-                 combine_terms=False, compute_residual=True): 
+                 combine_terms=False, compute_residual=True, 
+                 useconstantg=True): 
     """
     Compute RANS budgets from output data with mean fields only. 
     
@@ -100,10 +103,13 @@ def rans_budgets(run, xlim=None, ylim=None, zlim=None,
     Parameters
     ----------
     run (BudgetIO object)
+    sl (slice from BudgetIO.slice()) : optional, can be used in place of giving a run and x, y, z limits  (run still required)
     xlim, ylim, zlim : array-like, see BudgetIO.slice()
     compute_x, compute_y, compute_z (bool) : dictates which RANS budgets to compute. Default: x, y True, z False
     combine_terms (bool) : combines advection terms and turbulence terms. Default: False
     compute_residual (bool) : computes the residual pointwise. Default: True
+    useconstantg (bool) : uses constant geostrophic forcing given in the `physics` namelist if True. 
+        If not, calls _get_inflow()
     
     Returns
     -------
@@ -119,8 +125,11 @@ def rans_budgets(run, xlim=None, ylim=None, zlim=None,
 
     """
     
-    terms = ['ubar', 'vbar', 'wbar', 'pbar', 'uu', 'uv', 'uw', 'vv', 'vw', 'ww']
-    sl = run.slice(budget_terms=terms, xlim=xlim, ylim=ylim, zlim=zlim)
+    if sl is None: 
+        terms = ['ubar', 'vbar', 'wbar', 'pbar', 'uu', 'uv', 'uw', 'vv', 'vw', 'ww', 'dpdx', 'dpdy', 'dpdz']
+        sl = run.slice(budget_terms=terms, xlim=xlim, ylim=ylim, zlim=zlim, round_extent=False)
+    else: 
+        zlim = [sl['z'][0], sl['z'][-1]]
     
     # constants: 
     Ro = run.Ro
@@ -128,10 +137,13 @@ def rans_budgets(run, xlim=None, ylim=None, zlim=None,
     C1 = 2/Ro * np.sin(lat*np.pi/180)
 #     Gx = 1 
     # need to retrieve and trim the inflow profiles: 
-    Gx, Gy = run._get_inflow()
-    zids = run.get_xids(z=zlim, return_slice=True)
-    Gx = Gx[zids]
-    Gy = Gy[zids]
+    if useconstantg: 
+        Gx, Gy = [1, 0]  # TODO: GENERALIZE
+    else: 
+        Gx, Gy = run._get_inflow()
+        zids = run.get_xids(z=zlim, return_slice=True)
+        Gx = Gx[zids]
+        Gy = Gy[zids]
 
     ret = (sl, )
     
@@ -144,7 +156,7 @@ def rans_budgets(run, xlim=None, ylim=None, zlim=None,
         rans_x['ududx'] = -(sl['ubar'] * partialx(sl['ubar'], run.dx))
         rans_x['vdudy'] = -(sl['vbar'] * partialy(sl['ubar'], run.dy))
         rans_x['wdudz'] = -(sl['wbar'] * partialz(sl['ubar'], run.dz))
-        rans_x['dpdx'] = -partialx(sl['pbar'], run.dx)
+        rans_x['dpdx'] = sl['dpdx']  #-partialx(sl['pbar'], run.dx)
         rans_x['xCor'] = -C1*(Gy - sl['vbar'])
         rans_x['duudx'] = -partialx(sl['uu'], run.dx)
         rans_x['duvdy'] = -partialy(sl['uv'], run.dy)
@@ -171,7 +183,7 @@ def rans_budgets(run, xlim=None, ylim=None, zlim=None,
         rans_y['udvdx'] = -(sl['ubar'] * partialx(sl['vbar'], run.dx))
         rans_y['vdvdy'] = -(sl['vbar'] * partialy(sl['vbar'], run.dy))
         rans_y['wdvdz'] = -(sl['wbar'] * partialz(sl['vbar'], run.dz))
-        rans_y['dpdy'] = -partialy(sl['pbar'], run.dy)
+        rans_y['dpdy'] = sl['dpdy'] #-partialy(sl['pbar'], run.dy)
         rans_y['yCor'] = C1*(Gx-sl['ubar'])
         rans_y['dvudx'] = -partialx(sl['uv'], run.dx)
         rans_y['dvvdy'] = -partialy(sl['vv'], run.dy)
@@ -223,6 +235,58 @@ def rans_budgets(run, xlim=None, ylim=None, zlim=None,
     else: 
         return ret
     
+    
+def get_xids(x=None, y=None, z=None, 
+             x_ax=None, y_ax=None, z_ax=None, 
+             return_none=False, return_slice=False): 
+    """
+    COPIED from BudgetIO.py
+    
+    Translates x, y, and z limits in the physical domain to indices based on x_ax, y_ax, z_ax
+
+    Arguments
+    ---------
+    x, y, z : float or iterable (tuple, list, etc.) of physical locations to return the nearest index for
+    return_none : if True, populates output tuple with None if input is None. Default False. 
+    return_slice : if True, returns a tuple of slices instead a tuple of lists. 
+
+    Returns
+    -------
+    xid, yid, zid : list or tuple of lists with indices for the requested x, y, z, args in the order: x, y, z. 
+        If, for example, y and z are requested, then the returned tuple will have (yid, zid) lists. 
+        If only one value (float or int) is passed in for e.g. x, then an integer will be passed back in xid. 
+    """
+
+    ret = ()
+
+    # iterate through x, y, z, index matching for each term
+    for s, s_ax in zip([x, y, z], [x_ax, y_ax, z_ax]): 
+        if s is not None: 
+            if s_ax is None: 
+                raise AttributeError('Axis keyword not providede')
+                
+            if hasattr(s, '__iter__'): 
+                xids = [np.argmin(np.abs(s_ax-xval)) for xval in s]
+            else: 
+                xids = np.argmin(np.abs(s_ax-s))
+
+            if return_slice:  # append slices to the return tuple
+                ret = ret + (slice(np.min(xids), np.max(xids)+1), )
+
+            else:  # append index list to the return tuple
+                ret = ret + (xids, )
+
+        elif return_none:  # fill with None or slice(None)
+            if return_slice: 
+                ret = ret + (slice(None), )
+
+            else: 
+                ret = ret + (None, )
+
+    if len(ret)==1: 
+        return ret[0]  # don't return a length one tuple 
+    else: 
+        return ret
 
 # --------------- NUMERICS ----------------
 
@@ -289,6 +353,38 @@ def partialz(field, dz):
     return dfdz
 
 
+def partialr(fieldyz, dy, dz, theta): 
+    """
+    Partial derivates in the radial direction in cylindrical coordinates. 
+    """
+    dim = len(fieldyz.shape)
+    if dim == 2: 
+        fieldyz = fieldyz[None, :, :]  # append x-axis
+    
+    ddy = pio.partialy(fieldyz, dy)
+    ddz = pio.partialz(fieldyz, dz)
+    
+    ddr = ddy * np.cos(theta) + ddz * np.sin(theta)
+    return np.squeeze(ddr)
+
+
+def partialt(fieldyz, dy, dz, theta): 
+    """
+    Partial derivates of a scalar field variable in the theta direction. 
+    
+    This function actually computes 1/r (d/dtheta)
+    """
+    dim = len(fieldyz.shape)
+    if dim == 2: 
+        fieldyz = fieldyz[None, :, :]  # append x-axis
+
+    ddy = pio.partialy(fieldyz, dy)
+    ddz = pio.partialz(fieldyz, dz)
+    
+    ddt = -ddy * np.sin(theta) + ddz * np.cos(theta)
+    return np.squeeze(ddt)
+
+
 # second derivatives in x, y, z
 def partialx2(field, dx): 
     """
@@ -324,6 +420,97 @@ def partialz2(field, dz):
     return dfdz
 
 
+def compute_partials(sl_dict, keys, ret=False): 
+    """
+    Computes partial derivatives in x, y, and z for 3D scalar field in `keys`
+    
+    Parameters
+    ----------
+    sl_dict (dict) : dictionary from BudgetIO.slice()
+    keys (list) : list of keys to differentiate in x, y, z
+    ret (bool) : if True, returns the computed quantities instead of appending them in the same dictionary
+    
+    Returns
+    -------
+    None (updates sl_dict)
+    """
+    
+    xi = ['dx', 'dy', 'dz']
+    ui = keys  # ui = ['ubar', 'vbar', 'wbar']
+    dxi = [partialx, partialy, partialz]
+    
+    dx = {
+        'dx': sl_dict['x'][1]-sl_dict['x'][0], 
+        'dy': sl_dict['y'][1]-sl_dict['y'][0], 
+        'dz': sl_dict['z'][1]-sl_dict['z'][0]
+    }
+
+    fstring = 'd{:s}d{:s}'
+    xs = ['x', 'y', 'z']
+    us = ui  # us = ['u', 'v', 'w']
+    newdict = {}
+
+    # duidxj = pd.DataFrame(index=ui, columns=xi)
+    for i, u in enumerate(ui): 
+        for j, x in enumerate(xi): 
+            newdict[fstring.format(us[i], xs[j])] = dxi[j](sl_dict[u], dx[x])
+            
+    if ret: 
+        return newdict
+    else: 
+        sl_dict.update({
+            key:newdict[key] for key in newdict.keys()
+        })
+    
+            
+def compute_vort(sl_dict): 
+    """
+    Computes the vorticity vector
+    """
+    # make sure the partials have already been computed
+    partial_keys = ['dubardx', 'dubardy', 'dubardz', 
+                    'dvbardx', 'dvbardy', 'dvbardz', 
+                    'dwbardx', 'dwbardy', 'dwbardz']
+    
+    if not np.all([keycheck in sl_dict.keys() for keycheck in partial_keys]): 
+        compute_partials(sl_dict, ['ubar', 'vbar','wbar'])
+    
+    # update the dictionary with vorticity terms
+    sl_dict.update({
+        'wx': sl_dict['dwbardy'] - sl_dict['dvbardz'], 
+        'wy': sl_dict['dubardz'] - sl_dict['dwbardx'], 
+        'wz': sl_dict['dvbardx'] - sl_dict['dubardy'], 
+    })
+    
+    
+# ============= polar coordinate functions ================
+
+def compute_vort_xrt(sl_dict): 
+    """
+    Transforms the vorticity vector x,y,z -> x,r,theta
+    """
+    
+    if not np.all([keycheck in sl_dict.keys() for keycheck in ['wx', 'wy', 'wz']]): 
+        compute_vort(sl_dict)
+        
+    yy, zz = np.meshgrid(sl_dict['y'], sl_dict['z'], indexing='ij')
+    theta = np.arctan2(zz, yy)
+    # append third axis for explicit broadcasting: 
+    theta = theta[None, :, :]
+
+    sl_dict.update({
+        'wr': sl_dict['wy']*np.cos(theta) + sl_dict['wz']*np.sin(theta), 
+        'wt' : -sl_dict['wy']*np.sin(theta) + sl_dict['wz']*np.cos(theta), 
+        'theta': theta
+    })
+
+    # also compute ur, utheta: 
+    sl_dict.update({
+        'ur': sl_dict['vbar']*np.cos(theta) + sl_dict['wbar']*np.sin(theta), 
+        'ut' : -sl_dict['vbar']*np.sin(theta) + sl_dict['wbar']*np.cos(theta)
+    })
+
+
 # ------------------- IO ----------------
 
 
@@ -350,8 +537,36 @@ def read_list(dir_name):
     run_list = []
 
     for run in runs: 
-        run_list.append(pio.BudgetIO(run[0], padeops=True, verbose=False))
+        run_list.append(padeopsIO.BudgetIO(run[0], padeops=True, verbose=False))
         
     return run_list
 
 
+def key_search_r(nested_dict, key):
+    """
+    Copied from budgetkey.py
+    
+    Performs a recursive search for the dictionary key `key` in any of the dictionaries contained 
+    inside `nested_dict`. Returns the value of nested_dict[key] at the first match. 
+    
+    Parameters
+    ----------
+    nested_dict (dict-like) : dictionary [possibly of dictionaries]
+    key (str) : dictionary key to match
+    
+    Returns
+    -------
+    nested_dict[key] if successful, None otherwise. 
+    """
+    
+    try: 
+        for k in nested_dict.keys(): 
+            if k == key: 
+                return nested_dict[k]
+            else: 
+                res = key_search_r(nested_dict[k], key)
+                if res is not None: 
+                    return res
+        
+    except AttributeError as e: 
+        return
