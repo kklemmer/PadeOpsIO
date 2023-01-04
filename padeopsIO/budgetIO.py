@@ -255,8 +255,15 @@ class BudgetIO():
                     input_nml = f90nml.read(inputfile) 
                     if self.verbose: 
                         print('_read_inputfile(): trying inputfile', inputfile)
+                        
+                    try: 
+                        tmp_runid = input_nml['IO']['runid']
+                    except KeyError as e: 
+                        if self.verbose: 
+                            print('_read_inputfile(): no runid for', inputfile)
+                        tmp_runid = None
 
-                    if input_nml['IO']['runid'] == kwargs['runid']: 
+                    if tmp_runid == kwargs['runid']: 
                         self.input_nml = input_nml
                         self._convenience_variables(**kwargs)  # make some variables in the metadata more accessible, also loads grid
                         self.associate_nml = True  # successfully loaded input file
