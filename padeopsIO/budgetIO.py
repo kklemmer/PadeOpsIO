@@ -4,6 +4,7 @@ import re
 import warnings
 import glob
 from scipy.io import savemat
+import matplotlib.pyplot as plt
 
 try: 
     import f90nml
@@ -654,13 +655,15 @@ class BudgetIO():
                       'v':'vVel', 
                       'w':'wVel', 
                       'p':'prss', 
-                      'T':'potT'}  # add more? 
+                      'T':'potT',
+                      'kSGS':'kSGS',
+                      'nSGS':'nSGS'}  # add more? 
         
         # parse terms: 
-        if field_terms is None: 
+        if field_terms is None:
             terms = dict_match.keys()
             
-        else: 
+        else:
             terms = [t for t in field_terms if t in dict_match.keys()]
         
         # parse tidx
@@ -684,8 +687,77 @@ class BudgetIO():
         self.associate_field = True
             
         print('BudgetIO loaded fields {:s} at time: {:.06f}'.format(str(list(terms)), self.time))
+
+
+    def time_slices(self, field_terms=None, tidx=None, xlim=None, ylim=None, zlim=None): 
+        """
+        Reads instantaneous slices from fields from PadeOps output files into the self.field dictionary.
+        Each dictionary item is an array where the three dimensions are 2 spatial dimensions and time.
         
+        Parameters
+        ----------
+        field_terms (list or list of strings) : fields to use
+        tidx (list) : reads fields from the specified list of time ID. Default: self.unique_tidx
+        keys (fields in slice `sl`) : keys to slice into from the input slice `sl`
+        tidx (int) : time ID to read budgets from, see read_budgets(). Default None
+        xlim, ylim, zlim (tuple) : in physical domain coordinates, the slice limits. If an integer is given, then the 
+            dimension of the slice will be reduced by one. If None is given (default), then the entire domain extent is sliced. 
         
+        Returns
+        -------
+        slices (dict) : dictionary organized with all of the sliced fields, keyed by the budget name, and additional keys for
+            the slice domain 'x', 'y', 'z', 't'
+                
+        
+        """
+
+        if tidx is None:
+            tidx = self.unique_tidx()
+
+        slices = {}  # build from empty dict
+
+        # find slice indices
+        xid, yid, zid = self.get_xids(x=xlim, y=ylim, z=zlim, return_none=True, return_slice=True)
+        xLine = self.xLine
+        yLine = self.yLine
+        zLine = self.zLine    
+
+
+        dict_match = {'u':'uVel', 
+                      'v':'vVel', 
+                      'w':'wVel', 
+                      'p':'prss', 
+                      'T':'potT',
+                      'kSGS':'kSGS',
+                      'nSGS':'nSGS'}
+
+        
+        # parse terms: 
+        if field_terms is None:
+            terms = dict_match.keys()
+        else:
+            terms = [t for t in field_terms if t in dict_match.keys()]
+
+        # initialize temporary array 
+        for key in terms:
+            slices[key] = np.squeeze(np.zeros([xid.stop-xid.start,yid.stop-yid.start,zid.stop-zid.start,len(tidx)]))
+                
+        # iterate through list of time ids
+        for i in range(len(tidx)):
+            self.read_fields(tidx=tidx[i])
+
+            # iterate through field terms
+            for key in terms:
+                slices[key][:,:,i] = np.squeeze(self.field[key][xid, yid, zid])
+
+        # also save domain information
+        slices['x'] = xLine[xid]
+        slices['y'] = yLine[yid]
+        slices['z'] = zLine[zid]
+        slices['tidx'] = tidx
+        
+        return slices
+
     def clear_budgets(self): 
         """
         Clears any loaded budgets. 
@@ -915,8 +987,8 @@ class BudgetIO():
         else: 
             u, v = inflow.InflowParser.inflow_budgets(self) 
 
-        # return requested information 
-
+        # return requested information
+ 
         if wInflow: 
             # If this is not nominally zero, then this will need to be fixed. 
             w = np.zeros(self.zLine.shape)
@@ -1500,6 +1572,89 @@ class BudgetIO():
             return np.mean(power)
 
         return power/pnormfact  # this is an array
+
+    #### Functions for plotting budgets ####
+
+    def plot_budget_momentum(self, component=None):
+        '''
+        Plots the mean momentum budget for a given component
+        
+        Arguments
+        ---------
+        component (int) : vector component of the mean momentum budget to plot
+                          1 - streamwise (x)
+                          2 - lateral    (y)
+                          3 - vertical   (w)
+
+        Returns
+        -------
+        fig : figure object 
+        ax : axes object
+        '''
+
+        if component is None:
+            # default to the streamwise mean momentum budget
+            component = 1
+
+        if component == 1:
+            comp_str = ['u', 'x']
+        elif component == 2:
+            comp_str = ['v', 'y']
+        elif component == 3:
+            comp_str = ['w', 'z']
+        else:
+            print("Please enter a valid component number. Valid options are 1, 2, 3, or None (defaults to 1).")
+            return None
+        
+        keys = [key for key in budgetkey.get_key() if budgetkey.get_key()[key][0] == 1]
+
+        keys = [key for key in keys if comp_str[0] in key or comp_str[1] in key]
+
+        key_labels = budgetkey.key_labels()
+
+        fig, ax = plt.subplots()
+
+        residual = 0
+        
+        for key in keys:
+            ax.plot(np.mean(np.mean(self.budget[key], axis=1), axis=0), self.zLine, label=key_labels[key])
+            residual += self.budget[key]
+
+        ax.plot(np.mean(np.mean(residual, axis=1), axis=0), self.zLine, label='Residual', linestyle='--', color='black')
+
+        ax.set_ylabel('$z/L$')
+            
+        return fig, ax
+
+    def plot_budget_tke(self):
+        '''
+        Plots the tke budget
+        
+        Arguments
+        ---------
+        
+        Returns
+        -------
+        fig : figure object 
+        ax : axes object
+        '''
+        
+        keys = [key for key in budgetkey.get_key() if budgetkey.get_key()[key][0] == 3]
+        key_labels = budgetkey.key_labels()
+
+        fig, ax = plt.subplots()
+
+        residual = 0
+        
+        for key in keys:
+            ax.plot(np.mean(np.mean(self.budget[key], axis=1), axis=0), self.zLine, label=key_labels[key])
+            residual += self.budget[key]
+
+        ax.plot(np.mean(np.mean(residual, axis=1), axis=0), self.zLine, label='Residual', linestyle='--', color='black')
+
+        ax.set_ylabel('$z/L$')
+            
+        return fig, ax
 
 
 if __name__ == "__main__": 
