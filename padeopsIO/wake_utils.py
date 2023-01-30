@@ -361,8 +361,8 @@ def partialr(fieldyz, dy, dz, theta):
     if dim == 2: 
         fieldyz = fieldyz[None, :, :]  # append x-axis
     
-    ddy = pio.partialy(fieldyz, dy)
-    ddz = pio.partialz(fieldyz, dz)
+    ddy = partialy(fieldyz, dy)
+    ddz = partialz(fieldyz, dz)
     
     ddr = ddy * np.cos(theta) + ddz * np.sin(theta)
     return np.squeeze(ddr)
@@ -378,8 +378,8 @@ def partialt(fieldyz, dy, dz, theta):
     if dim == 2: 
         fieldyz = fieldyz[None, :, :]  # append x-axis
 
-    ddy = pio.partialy(fieldyz, dy)
-    ddz = pio.partialz(fieldyz, dz)
+    ddy = partialy(fieldyz, dy)
+    ddz = partialz(fieldyz, dz)
     
     ddt = -ddy * np.sin(theta) + ddz * np.cos(theta)
     return np.squeeze(ddt)
