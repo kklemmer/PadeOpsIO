@@ -905,12 +905,11 @@ class BudgetIO():
         for key in key_subset:
             budget, term = BudgetIO.key[key]
             if budget==4:
-                component = budget4_components[int(np.floor(term/10))]
+                component = budget4_components[int(np.floor((term-1)/10))]
                 if term > 10:
                     term = term % 10 + 1
                     
                 searchstr =  self.dir_name + '/Run{:02d}_budget{:01d}_{:02d}_term{:02d}_t{:06d}_*.s3D'.format(self.runid, budget, component, term, tidx)
-                print(searchstr)
                 u_fname = glob.glob(searchstr)[0]  
 
             else:
@@ -1630,8 +1629,6 @@ class BudgetIO():
                         terms = [int(re.findall('Run{:02d}_budget{:01d}_{:01d}_term(\d+).*'.format(runid, b, component), name)[0]) + budget4_comp_dict[component]
                                  for name in filenames if 
                                  re.findall('Run{:02d}_budget{:01d}_{:01d}_term(\d+).*'.format(runid, b, component), name)]
-
-                        print(terms)
                         tup_list += [((b, term)) for term in set(terms)]  # these are all tuples
                     
                 
@@ -1902,6 +1899,23 @@ class BudgetIO():
 
     #### Functions for plotting budgets ####
 
+    # production      - blues
+    # transport       - reds
+    # redistributions - yellows
+    # dissipation     - purples
+    # coriolis        - greens
+    
+    budget_colors = {"shear_production": "#4169e1",
+                     "buoyancy" : "#0000cd",
+                     "AD" : "#1e90ff",
+                     "adv" : "#b22222",
+                     "p_transport" : "#ffa07a",
+                     "SGS_transport" : "#ea3c53",
+                     "turb_transport" : "#ff0000",
+                     "p_strain" : "#fcc200",
+                     "dissipation" : "#8a2be2",
+                     "coriolis" : '#2e8b57'}
+    
     def plot_budget_momentum(self, component=None):
         '''
         Plots the mean momentum budget for a given component
@@ -2031,6 +2045,13 @@ class BudgetIO():
                      33 : [21, 30],
                      13 : [31, 40],
                      23 : [41, 50]}
+
+        comp_str_dict = {11 : 'uu',
+                         22 : 'vv',
+                         33 : 'ww',
+                         13 : 'uw',
+                         23 : 'vw'}
+
         
         keys = [key for key in budgetkey.get_key() if budgetkey.get_key()[key][0] == 4 and budgetkey.get_key()[key][1] in range(comp_dict[component][0], comp_dict[component][1])]
         key_labels = budgetkey.key_labels()
@@ -2040,7 +2061,7 @@ class BudgetIO():
         residual = 0
         
         for key in keys:
-            ax.plot(np.mean(np.mean(self.budget[key], axis=1), axis=0), self.zLine, label=key)
+            ax.plot(np.mean(np.mean(self.budget[key], axis=1), axis=0), self.zLine, label=key, color = self.budget_colors[key.replace(comp_str_dict[component] + "_", "")])
             residual += self.budget[key]
 
         ax.plot(np.mean(np.mean(residual, axis=1), axis=0), self.zLine, label='Residual', linestyle='--', color='black')
@@ -2183,7 +2204,7 @@ class BudgetIO():
         residual = 0
         
         for key in keys:
-            ax.plot(self.budget_xy[key], self.zLine, label = key)
+            ax.plot(self.budget_xy[key], self.zLine, label = key, color = self.budget_colors[key.replace("uu_", "")])
             residual += self.budget_xy[key]
 
         ax.plot(residual, self.zLine, label='Residual', linestyle='--', color='black')
@@ -2214,7 +2235,7 @@ class BudgetIO():
         residual = 0
         
         for key in keys:
-            ax.plot(self.budget_xy[key], self.zLine, label = key)
+            ax.plot(self.budget_xy[key], self.zLine, label = key, color = self.budget_colors[key.replace("uw_", "")])
             residual += self.budget_xy[key]
 
         ax.plot(residual, self.zLine, label='Residual', linestyle='--', color='black')
@@ -2245,7 +2266,7 @@ class BudgetIO():
         residual = 0
         
         for key in keys:
-            ax.plot(self.budget_xy[key], self.zLine, label = key)
+            ax.plot(self.budget_xy[key], self.zLine, label = key, color = self.budget_colors[key.replace("vw_", "")])
             residual += self.budget_xy[key]
 
         ax.plot(residual, self.zLine, label='Residual', linestyle='--', color='black')
@@ -2276,7 +2297,7 @@ class BudgetIO():
         residual = 0
         
         for key in keys:
-            ax.plot(self.budget_xy[key], self.zLine, label = key)
+            ax.plot(self.budget_xy[key], self.zLine, label = key, color = self.budget_colors[key.replace("ww_", "")])
             residual += self.budget_xy[key]
 
         ax.plot(residual, self.zLine, label='Residual', linestyle='--', color='black')
