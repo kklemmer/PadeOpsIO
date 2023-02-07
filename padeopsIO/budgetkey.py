@@ -97,6 +97,7 @@ def get_key():
         'vT': (0, 28), 
         'wT': (0, 29), 
         'TT': (0, 30), 
+        'theta': (0, 31), 
         # BUDGET 1 TERMS: (momentum)
         'DuDt': (1, 1),  # x-advection
         'dpdx': (1, 2),  # x-pressure gradient
@@ -131,8 +132,8 @@ def get_key():
         'TKE_p_transport': (3, 4), 
         'TKE_SGS_transport': (3, 5), 
         'TKE_dissipation': (3, 6), 
-        'TKE_buoyancy': (3, 7), 
-        'TKE_coriolis': (3, 8), 
+        'TKE_AD': (3, 7), 
+        'TKE_buoyancy': (3, 8), 
         #'TKE_AD': (3, 9), 
         # BUDGET 4 TERMS: Reynolds stress budgets
         'uu_shear_production':              (4,1),

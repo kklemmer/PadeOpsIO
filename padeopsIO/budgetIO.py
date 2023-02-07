@@ -894,6 +894,7 @@ class BudgetIO():
             print("Requested budget tidx={:d} could not be found. Using tidx={:d} instead.".format(tidx, closest_tidx))
             tidx = closest_tidx 
             
+        print(tidx)
         # update self.time and self.tidx: 
 #         self.tidx = tidx
         
@@ -906,9 +907,12 @@ class BudgetIO():
             budget, term = BudgetIO.key[key]
             if budget==4:
                 component = budget4_components[int(np.floor((term-1)/10))]
+
                 if term > 10:
-                    term = term % 10 + 1
-                    
+                    term = term % 10
+                    if term == 0:
+                        term = 10
+                print("component : {}, term : {}, key : {}".format(component, term,key))
                 searchstr =  self.dir_name + '/Run{:02d}_budget{:01d}_{:02d}_term{:02d}_t{:06d}_*.s3D'.format(self.runid, budget, component, term, tidx)
                 u_fname = glob.glob(searchstr)[0]  
 
@@ -1905,17 +1909,28 @@ class BudgetIO():
     # dissipation     - purples
     # coriolis        - greens
     
-    budget_colors = {"shear_production": "#4169e1",
-                     "buoyancy" : "#0000cd",
+    budget_colors = {"shear_production": "tab:blue",
+                     "buoyancy" : "tab:gray",
+                     "AD" : "tab:cyan",
+                     "adv" : "tab:orange", #
+                     "p_transport" : "tab:purple",  #
+                     "SGS_transport" : "tab:brown",   #
+                     "turb_transport" : "tab:green", #
+                     "p_strain" : "tab:red", #
+                     "dissipation" : "tab:pink", #
+                     "coriolis" : 'tab:olive'} #
+    '''
+    {"shear_production": "#7e82ed", #
+                     "buoyancy" : "#0b5394",
                      "AD" : "#1e90ff",
-                     "adv" : "#b22222",
-                     "p_transport" : "#ffa07a",
-                     "SGS_transport" : "#ea3c53",
-                     "turb_transport" : "#ff0000",
-                     "p_strain" : "#fcc200",
-                     "dissipation" : "#8a2be2",
-                     "coriolis" : '#2e8b57'}
-    
+                     "adv" : "gray", #
+                     "p_transport" : "#439a1d",  #
+                     "SGS_transport" : "#7926c7",   #
+                     "turb_transport" : "#f01094", #
+                     "p_strain" : "#ffae1d", #
+                     "dissipation" : "red", #
+                     "coriolis" : '#42b79b'} #
+    '''
     def plot_budget_momentum(self, component=None):
         '''
         Plots the mean momentum budget for a given component
@@ -2054,8 +2069,7 @@ class BudgetIO():
 
         
         keys = [key for key in budgetkey.get_key() if budgetkey.get_key()[key][0] == 4 and budgetkey.get_key()[key][1] in range(comp_dict[component][0], comp_dict[component][1])]
-        key_labels = budgetkey.key_labels()
-
+        
         fig, ax = plt.subplots()
 
         residual = 0
@@ -2183,7 +2197,7 @@ class BudgetIO():
         return fig, ax
 
     
-    def plot_budget_xy_uu(self):
+    def plot_budget_xy_uu(self, linestyle=None):
         '''
         Plots the streamwise variance <uu> budget
         
@@ -2195,6 +2209,9 @@ class BudgetIO():
         fig : figure object 
         ax : axes object
         '''
+
+        if not linestyle:
+            linestyle = '-'
         
         keys = [key for key in budgetkey.get_key_xy() if budgetkey.get_key_xy()[key][0] == 4 and budgetkey.get_key_xy()[key][1] >= 1 and budgetkey.get_key_xy()[key][1] <= 9]
         key_labels = budgetkey.key_labels()
@@ -2204,7 +2221,7 @@ class BudgetIO():
         residual = 0
         
         for key in keys:
-            ax.plot(self.budget_xy[key], self.zLine, label = key, color = self.budget_colors[key.replace("uu_", "")])
+            ax.plot(self.budget_xy[key], self.zLine, label = key, color = self.budget_colors[key.replace("uu_", "")], linestyle=linestyle)
             residual += self.budget_xy[key]
 
         ax.plot(residual, self.zLine, label='Residual', linestyle='--', color='black')
@@ -2235,7 +2252,7 @@ class BudgetIO():
         residual = 0
         
         for key in keys:
-            ax.plot(self.budget_xy[key], self.zLine, label = key, color = self.budget_colors[key.replace("uw_", "")])
+            ax.plot(self.budget_xy[key], self.zLine, label = key)#, color = self.budget_colors[key.replace("uw_", "")])
             residual += self.budget_xy[key]
 
         ax.plot(residual, self.zLine, label='Residual', linestyle='--', color='black')
@@ -2266,7 +2283,7 @@ class BudgetIO():
         residual = 0
         
         for key in keys:
-            ax.plot(self.budget_xy[key], self.zLine, label = key, color = self.budget_colors[key.replace("vw_", "")])
+            ax.plot(self.budget_xy[key], self.zLine, label = key)#, color = self.budget_colors[key.replace("vw_", "")])
             residual += self.budget_xy[key]
 
         ax.plot(residual, self.zLine, label='Residual', linestyle='--', color='black')
@@ -2297,7 +2314,7 @@ class BudgetIO():
         residual = 0
         
         for key in keys:
-            ax.plot(self.budget_xy[key], self.zLine, label = key, color = self.budget_colors[key.replace("ww_", "")])
+            ax.plot(self.budget_xy[key], self.zLine, label = key)#, color = self.budget_colors[key.replace("ww_", "")])
             residual += self.budget_xy[key]
 
         ax.plot(residual, self.zLine, label='Residual', linestyle='--', color='black')
