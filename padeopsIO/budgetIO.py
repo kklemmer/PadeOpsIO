@@ -1915,6 +1915,14 @@ class BudgetIO():
     # dissipation     - purples
     # coriolis        - greens
     
+    momentum_budget_colors = {"Dt": "tab:blue", 
+                              "dpd": "tab:orange",
+                              "SGS": "tab:green",
+                              "AD": "tab:red",
+                              "Cor": "tab:purple",
+                              "Geo": "tab:brown",
+                              "B": "tab:gray"}
+
     budget_colors = {"shear_production": "tab:blue",
                      "buoyancy" : "tab:gray",
                      "AD" : "tab:cyan",
@@ -1937,7 +1945,7 @@ class BudgetIO():
                      "dissipation" : "red", #
                      "coriolis" : '#42b79b'} #
     '''
-    def plot_budget_momentum(self, component=None, coords=None):
+    def plot_budget_momentum(self, component=None, coords=None, fig=None, ax=None, linestyle=None, alpha=None):
         '''
         Plots the mean momentum budget for a given component
         
@@ -1958,35 +1966,47 @@ class BudgetIO():
             # default to the streamwise mean momentum budget
             component = 1
         if component == 1:
-            comp_str = ['u', 'x']
+            comp_str = ['DuDt', 'x']
         elif component == 2:
-            comp_str = ['v', 'y']
+            comp_str = ['DvDt', 'y']
         elif component == 3:
-            comp_str = ['w', 'z']
+            comp_str = ['DwDt', 'z']
         else:
             print("Please enter a valid component number. Valid options are 1, 2, 3, or None (defaults to 1).")
             return None
 
         if coords is None:
-            coords = [(0,len(self.xLine)-1), (0, len(self.yLine)-1), (0, len(self.zLine)-1)]
+            xid = (slice(0, len(self.xLine)), )
+            yid = (slice(0, len(self.yLine)), )
+            zid = (slice(0, len(self.zLine)), ) 
+        else:
+            xid, yid, zid = self.get_xids(x=coords[0], y=coords[1], z=coords[2], return_none=True, return_slice=True)
         
         keys = [key for key in budgetkey.get_key() if budgetkey.get_key()[key][0] == 1]
 
         keys = [key for key in keys if comp_str[0] in key or comp_str[1] in key]
 
-        key_labels = budgetkey.key_labels()
 
-        fig, ax = plt.subplots()
+        if not fig or not ax:    
+            fig, ax = plt.subplots()
+
+        if not linestyle:
+            linestyle = '-'
+        if not alpha:
+            alpha = 1
 
         residual = 0
         
         for key in keys:
-            ax.plot(np.mean(np.mean(self.budget[key][slice(*coords[0]), slice(*coords[1]), slice(*coords[2])], axis=1), axis=0), 
-                self.zLine, label=key_labels[key])
+            color = [color_value for color_key, color_value in self.momentum_budget_colors.items() if color_key in key]
+            print(slice(*coords[1]))
+            ax.plot(np.mean(np.mean(self.budget[key][xid,yid,zid], axis=1), axis=0), 
+                self.zLine, label=key, linestyle=linestyle, alpha=alpha, 
+                color = color[0])
             residual += self.budget[key]
 
-        ax.plot(np.mean(np.mean(residual[slice(*coords[0]), slice(*coords[1]), slice(*coords[2])], axis=1), axis=0), 
-                self.zLine, label='Residual', linestyle='--', color='black')
+        ax.plot(np.mean(np.mean(residual[xid,yid,zid], axis=1), axis=0), 
+                self.zLine, label='Residual', linestyle=linestyle, color='black', alpha=alpha)
 
         ax.set_ylabel('$z/L$')
             
