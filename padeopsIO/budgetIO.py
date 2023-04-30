@@ -159,14 +159,22 @@ class BudgetIO():
             turb_dir = self.input_nml['windturbines']['turbinfodir']
             ADM_type = self.input_nml['windturbines']['adm_type']
             num_turbines = self.input_nml['windturbines']['num_turbines']
-            self.turbineArray = turbineArray.TurbineArray(turb_dir, 
-                                                          ADM_type=ADM_type, 
-                                                          num_turbines=num_turbines, 
-                                                          verbose=self.verbose)
-            self.associate_turbines = True
-            
-            if self.verbose: 
-                print('_init_padeops(): Finished initializing wind turbine array with {:d} turbine(s)'.format(num_turbines))
+            try: 
+                self.turbineArray = turbineArray.TurbineArray(turb_dir, 
+                                                                ADM_type=ADM_type, 
+                                                                num_turbines=num_turbines, 
+                                                                verbose=self.verbose)
+                self.associate_turbines = True
+
+                if self.verbose: 
+                    print('_init_padeops(): Finished initializing wind turbine array with {:d} turbine(s)'.format(num_turbines))
+
+            except FileNotFoundError as e: 
+                warnings.warn("Turbine file not found, bypassing associating turbines.")
+                self.turbineArray = None
+                if self.verbose: 
+                    print(e)
+
 
         # These lines are taken almost verbatim from PadeOpsViz.py
         # read accompanying info file
