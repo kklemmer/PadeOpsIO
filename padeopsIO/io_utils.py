@@ -67,7 +67,8 @@ def key_search_r(nested_dict, key):
     
 
 def query_logfile(filename, search_terms=['TIDX'], 
-                  fsearch=r'({:s}).*\s+([-+]?(\d+(\.\d*)?|\.\d+)([dDeE][-+]?\d+)?)'): 
+                  fsearch=r'({:s}).*\s+([-+]?(\d+(\.\d*)?|\.\d+)([dDeE][-+]?\d+)?)', 
+                  maxlen=None): 
     """
     Queries the PadeOps output log file for text lines printed out by temporalhook.F90. 
     
@@ -81,6 +82,7 @@ def query_logfile(filename, search_terms=['TIDX'],
     search_terms (list) : list of search terms. Default: length 1 list ['TIDX']. 
         Search terms are case sensitive. 
     fsearch (string) : string format for regex target. 
+    maxlen (int) : maximum length of return lists. Default: None
     
     Returns
     -------
@@ -103,8 +105,38 @@ def query_logfile(filename, search_terms=['TIDX'],
             match = re.search(search, line)
             if match is not None: 
                 key = match.groups()[0]  # this was the matched keyword
+                
+                # before appending, check to make sure we haven't exceeded maxlen
+                if maxlen is not None and (len(ret[key]) >= maxlen): 
+                    break
+                
                 # append the associated matched value, cast into a float
                 ret[key].append(float(match.groups()[1]))
                 
     # convert lists to array: 
     return {key: array(ret[key]) for key in ret.keys()}
+
+
+def get_timekey(self, budget=False): 
+    """
+    Returns a dictionary matching time keys [TIDX in PadeOps] to non-dimensional times. 
+    
+    Arguments
+    ----------
+    self (BudgetIO object) : linked PadeOps BudgetIO object
+    budget (bool) : if true, matches budget times from BudgetIO.unique_budget_tidx(). Default false. 
+    
+    Returns
+    -------
+    timekey (dict) : matching {TIDX: time} dictionary 
+    """
+    tidxs = self.unique_tidx()
+    times = self.unique_times()
+    
+    timekey = {tidx: time for tidx, time in zip(tidxs, times)}
+    
+    if budget: 
+        keys = self.unique_budget_tidx(return_last=False)
+        return {key: timekey[key] for key in keys}
+    else: 
+        return timekey
