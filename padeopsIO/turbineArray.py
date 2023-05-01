@@ -109,10 +109,8 @@ class TurbineArray():
         Converts self.__dict__ into a dictionary with no namelists. 
         """
 
-        ret = self.__dict__.copy()
-        ret['array'] = ret['array'][0].todict().copy()
-        return ret
-
+        return self.__dict__.copy()
+        
         
 
 if __name__ == "__main__": 
