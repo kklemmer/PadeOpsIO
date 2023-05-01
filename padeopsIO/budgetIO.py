@@ -90,7 +90,7 @@ class BudgetIO():
         self.associate_turbines = False
         self.normalized_xyz = False
 
-        if all(x in kwargs for x in ['runid', 'Lx', 'Ly', 'Lz']) or ('padeops' in kwargs): 
+        if all(x in kwargs for x in ['runid', 'Lx', 'Ly', 'Lz']) or (('padeops' in kwargs) and kwargs['padeops']): 
             try: 
                 self._init_padeops(**kwargs)
                 self.associate_padeops = True
@@ -291,13 +291,6 @@ class BudgetIO():
         self.input_nml = f90nml.read(inputfile_ls[0])
         self._convenience_variables(**kwargs)  # make some variables in the metadata more accessible
         self.associate_nml = True  # successfully loaded input file
-        
-        # BUDGET VARIABLES: 
-        
-        # TODO - fix this in the metadata
-        
-#         self.last_tidx = self.unique_budget_tidx()
-#         self.last_n = self.last_budget_n() 
 
         
     def _convenience_variables(self, **kwargs): 
@@ -392,6 +385,9 @@ class BudgetIO():
             warnings.warn("No associated budget files found")
         else: 
             self.associate_budgets = True
+            self.budget_n = None
+            self.budget_tidx = None  
+            self.last_n = None  # all these are missing in npz files 04/24/2023
         
         # load metadata: expects a file named <filename>_metadata.npy
         
@@ -650,11 +646,16 @@ class BudgetIO():
         if not self.associate_fields: 
            raise AttributeError("read_fields(): No fields linked. ")
         
-        dict_match = {'u':'uVel', 
-                      'v':'vVel', 
-                      'w':'wVel', 
-                      'p':'prss', 
-                      'T':'potT'}  # add more? 
+        dict_match = {
+            'u':'uVel', 
+            'v':'vVel', 
+            'w':'wVel', 
+            'p':'prss', 
+            'T':'potT', 
+            'pfrn': 'pfrn',  # fringe pressure
+            'pdns': 'pdns',  # DNS pressure... what is this? 
+            'ptrb': 'ptrb',  # turbine pressure... what is this? 
+        }  # add more?
         
         # parse terms: 
         if field_terms is None: 
@@ -702,6 +703,7 @@ class BudgetIO():
         loaded_keys = self.budget.keys()
         self.budget = {}  # empty dictionary
 #         self.associate_budgets = False
+        self.budget_tidx = self.unique_budget_tidx(return_last=True)  # reset to final TIDX
 
         if self.verbose: 
             print('clear_budgets(): Cleared loaded budgets: {}'.format(loaded_keys))
@@ -737,14 +739,21 @@ class BudgetIO():
         # parse budget_terms with the key
         key_subset = self._parse_budget_terms(budget_terms, include_wakes=False)
         
-        if not overwrite:
-            remove_keys = [key for key in key_subset if key in self.budget.keys()]
-            if len(remove_keys) > 0 and self.verbose: 
-                print("read_budgets(): requested budgets that have already been loaded. \
-                    \n  Removed the following: {}. Pass overwrite=True to read budgets anyway.".format(remove_keys))
-            
-            # remove items that have already been loaded in  
-            key_subset = {key:key_subset[key] for key in key_subset if key not in self.budget.keys()}
+        if self.budget_tidx == tidx:  # note: tidx could be `None`
+            if not overwrite:  
+                remove_keys = [key for key in key_subset if key in self.budget.keys()]
+                if len(remove_keys) > 0 and self.verbose: 
+                    print("read_budgets(): requested budgets that have already been loaded. \
+                        \n  Removed the following: {}. Pass overwrite=True to read budgets anyway.".format(remove_keys))
+
+                # remove items that have already been loaded in  
+                key_subset = {key:key_subset[key] for key in key_subset if key not in self.budget.keys()}
+                
+            else: 
+                self.clear_budgets()
+                
+        elif self.budget.keys() is not None and tidx is not None:  # clear previous TIDX budgets, if they exist
+            self.clear_budgets()
 
         if self.associate_padeops: 
             self._read_budgets_padeops(key_subset, tidx=tidx)  # this will not include wake budgets
@@ -762,7 +771,12 @@ class BudgetIO():
         """
         
         if tidx is None: 
-            tidx = self.budget_tidx
+            if self.budget.keys() is not None: 
+                # if there are budgets loaded, continue loading from that TIDX
+                tidx = self.budget_tidx  
+            else: 
+                # otherwise, load budgets from the last available TIDX
+                tidx = self.unique_budget_tidx(return_last=True)
             
         elif tidx not in self.all_budget_tidx: 
             # find the nearest that actually exists
@@ -772,13 +786,6 @@ class BudgetIO():
             print("Requested budget tidx={:d} could not be found. Using tidx={:d} instead.".format(tidx, closest_tidx))
             tidx = closest_tidx 
             
-        # update self.time and self.tidx: 
-#         self.tidx = tidx
-        
-#         info_fname = self.dir_name + '/Run{:02d}_info_t{:06d}.out'.format(self.runid, self.tidx)
-#         self.info = np.genfromtxt(info_fname, dtype=None)
-#         self.time = self.info[0]
-
         # these lines are almost verbatim from PadeOpsViz.py
         for key in key_subset:
             budget, term = BudgetIO.key[key]
@@ -787,13 +794,13 @@ class BudgetIO():
             u_fname = glob.glob(searchstr)[0]  
             
             self.budget_n = int(re.findall('.*_t\d+_n(\d+)', u_fname)[0])  # extract n from string
-            self.budget_tidx = tidx
+            self.budget_tidx = tidx  # update self.budget_tidx
             
             temp = np.fromfile(u_fname, dtype=np.dtype(np.float64), count=-1)
             self.budget[key] = temp.reshape((self.nx,self.ny,self.nz), order='F')  # reshape into a 3D array
 
         if self.verbose and len(key_subset) > 0: 
-            print('PadeOpsViz loaded the budget fields at time:' + '{:.06f}'.format(tidx))
+            print('PadeOpsViz loaded the budget fields at TIDX:' + '{:.06f}'.format(tidx))
 
 
     def _read_budgets_npz(self, key_subset, mmap=None): 
@@ -975,7 +982,7 @@ class BudgetIO():
     
     def slice(self, budget_terms=None, field=None, sl=None, keys=None, tidx=None, 
               xlim=None, ylim=None, zlim=None, 
-              overwrite=False, round_extent=True): 
+              overwrite=False, round_extent=False): 
         """
         Returns a slice of the requested budget term(s) as a dictionary. 
 
@@ -984,12 +991,13 @@ class BudgetIO():
         budget_terms (list or string) : budget term or terms to slice from. If None, expects a value for `field`
         field (arraylike or dict of arraylike) : fields similar to self.budget[]
         sl (slice from self.slice()) : dictionary of fields to be sliced into again. 
+            TODO: Fix slicing into 1D or 2D slices. 
         keys (fields in slice `sl`) : keys to slice into from the input slice `sl`
         tidx (int) : time ID to read budgets from, see read_budgets(). Default None
         xlim, ylim, zlim (tuple) : in physical domain coordinates, the slice limits. If an integer is given, then the 
             dimension of the slice will be reduced by one. If None is given (default), then the entire domain extent is sliced. 
-        overwrite (bool) : Overwrites loaded budgets, see read_budgets(). Default True
-        round_extent (bool) : Rounds extents to the nearest integer. Default True
+        overwrite (bool) : Overwrites loaded budgets, see read_budgets(). Default False
+        round_extent (bool) : Rounds extents to the nearest integer. Default False
         
         Returns
         -------
@@ -1030,6 +1038,7 @@ class BudgetIO():
 
             for term in key_subset: 
                 slices[term] = np.squeeze(self.budget[term][xid, yid, zid])  
+            slices['keys'] = list(key_subset.keys())  # save the terms 
 
         elif keys is not None and sl is not None: 
             # slice into slices
@@ -1037,9 +1046,12 @@ class BudgetIO():
             if type(keys) == list: 
                 for key in keys: 
                     slices[key] = np.squeeze(sl[key][xid, yid, zid])
+                slices['keys'] = keys
 
             else: 
+                # TODO: Fix slicing into 2D slices. This is a known bug
                 slices[key] = np.squeeze(sl[xid, yid, zid])
+                slices['keys'] = [key]
                 
         else: 
             warnings.warn("BudgetIO.slice(): either budget_terms= or field= must be initialized.")
@@ -1060,7 +1072,7 @@ class BudgetIO():
             slices['extent'] = np.array(ext).round()
         else: 
             slices['extent'] = np.array(ext)
-
+        
         return slices
 
 
