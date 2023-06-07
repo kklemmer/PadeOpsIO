@@ -11,15 +11,14 @@ except ImportError:
     # TODO - handle this somehow
     f90nml = None
 
-import padeopsIO.budgetkey as budgetkey  # defines key pairing
-import padeopsIO.inflow as inflow  # interface to retrieve inflow profiles
-
+from padeopsIO.turbine import Turbine
+    
 class TurbineArray(): 
     """
     # TODO fix class docstring
     """
     
-    def __init__(self, turb_dir=None, num_turbines=None, ADM_type=2, init_dict=None, verbose=False): 
+    def __init__(self, turb_dir=None, num_turbines=None, init_dict=None, ADM_type=None, verbose=False, sort='xloc'): 
         """
         Constructor function for a TurbineArray class
         
@@ -47,11 +46,12 @@ class TurbineArray():
             return
         
         self.turb_dir = turb_dir
-        self.ADM_type = ADM_type
         self.verbose = verbose
+        self._sort_by = sort
         
         # begin reading in turbines
         filenames = os.listdir(turb_dir)
+        filenames.sort()  # sort these into ascending order
         
         if num_turbines is not None: 
             self.num_turbines = num_turbines
@@ -66,35 +66,70 @@ class TurbineArray():
             
         
         # for now, each turbine can simply be a dictionary appended to a list
-        self.array = []
+        self.array = []  # array is deprecated (06/01/2023)
+        self.turbines = []
+        
         if self.verbose: 
             print("Reading turbines from the following files:\n", filenames)
             
         for i, filename in enumerate(filenames): 
             if i >= self.num_turbines: 
-                break  # only read in up to num_turbines turbines! 
+                break  # only read in up to num_turbines turbines
                 
             turb_nml = f90nml.read(os.path.join(turb_dir, filename))
             self.array.append(turb_nml)
+            self.turbines.append(Turbine(turb_nml, verbose=self.verbose, n=i+1, sort=self._sort_by))
             
             if self.verbose: 
                 print("\tTurbineArray: added turbine to array form file", filename)
+                
+        # sort the turbine array: 
+        self.sort()
         
         if self.num_turbines == 1: 
+            # make the variables more accessible
             if self.verbose: 
                 print("\tAdding convenience variables...")
+                
+            self.turbine = self.turbines[0]
             
-            # initialize some defaults (these may not be correct!)
-            self.thickness = 1.5
-            self.usecorrection = False
-            self.filterwidth = 0.5
-            
-            # make the variables more accessible
-            for key in self.array[0]['actuator_disk'].keys(): 
-                self.__dict__[key] = self.array[0]['actuator_disk'][key]
+            for key in self.turbine.input_nml['actuator_disk'].keys(): 
+                self.__dict__[key] = self.turbine.input_nml['actuator_disk'][key]
         
         if self.verbose: 
             print("TurbineArray: Initialized from", turb_dir)
+            
+            
+    def sort(self, reverse=False): 
+        """
+        Sorts the `turbines` property according to self._sort_by. 
+        
+        NOTE: This does not rearrange the `array` property, which is deprecated. 
+        """
+        self.turbines.sort(reverse=reverse)
+        
+        
+    def set_sort(self, sort_by, sort=True, reverse=False): 
+        """
+        Sets the sorting field for all turbines in the array. 
+        
+        Sorts the array if sort=True (default True)
+        """
+        
+        for turbine in self.turbines: 
+            turbine.set_sort(sort_by)
+            
+        self._sort_by = sort_by
+        if sort: 
+            self.sort(reverse)
+        
+        
+    def __iter__(self): 
+        """
+        Iterates through the turbine list. 
+        """
+        return self.turbines.__iter__()
+        
     
     def fromdict(self, init_dict): 
         """
@@ -110,6 +145,13 @@ class TurbineArray():
         """
 
         return self.__dict__.copy()
+    
+    
+    def __str__(self): 
+        """
+        Overrides the default object print statement. 
+        """
+        return "Turbine array object at {:s} with {:d} turbines".format(self.turb_dir, self.num_turbines)
         
         
 
