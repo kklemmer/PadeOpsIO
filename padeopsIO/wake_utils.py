@@ -6,18 +6,33 @@ import numpy as np
 import csv
 import os
 import padeopsIO
+from numpy.linalg import lstsq
+from scipy.optimize import curve_fit
 
 
 def wake_centroid_2d(u_hub=None, u_wake_hub=None, y=None, thresh=0): 
     """
-    u_hub (nx * ny) : 2D slice at hub height
+    Computes the 2D wake centroid from the center of mass method. Assumes that u_wake
+    is a positive quantity inside the wake such that u_wake_hub = u_inf - u_hub. 
+
+    Parameters
+    ----------
+    u_hub (nx * ny) : 2D slice at hub height (ASSUMES u_inf = 1; uniform inflow)
+    u_wake_hub (nx * ny) : 2D slice of the wake field, u_inf-u_hub > 0
+    y (ny * 1) : coordinate axis in y
+    thresh : (optional) thresholding parameter on u_wake_hub, default 0. 
+    
+    Returns
+    -------
+    yc (nx * 1) : wake centerline at hub plane
     """
     
     if u_wake_hub is None: 
         del_u = 1 - u_hub  # assume freestream is normalized to 1
     else: 
-        del_u = u_wake_hub
+        del_u = u_wake_hub.copy()
         
+    
     del_u[del_u < thresh] = 0
     
     numer = np.trapz(del_u*y, axis=1)
@@ -28,11 +43,23 @@ def wake_centroid_2d(u_hub=None, u_wake_hub=None, y=None, thresh=0):
 
 def wake_centroid_3d(u=None, u_wake=None, y=None, z=None, thresh=0): 
     """
-    u (nx * ny * nz) : 3D u-velocity field normalized to geostrophic wind
+    Computes the 3D wake centroid from the center of mass method. Assumes that u_wake
+    is a positive quantity inside the wake such that u_wake = u_inf - u. 
+        
+    Parameters
+    ----------
+    u (nx * ny * nz) : 3D u-velocity field normalized to geostrophic wind. Assumes u_inf = 1
+        (use for uniform inflow ONLY)
     u_wake (nx * ny * nz) : 3D wake field with background subtracted already. Supercedes
         `u` if included. 
-    y (ny) : y-coordinate axis
-    z (nz) : z-coordinate axis
+    y (ny * 1) : (optional) y-coordinate axis
+    z (nz * 1) : (optional) z-coordinate axis
+    thresh : (optional) thresholding parameter on u_wake_hub, default 0. 
+
+    Returns
+    -------
+    yc (nx * 1) : y-wake center (returned only if `y` is given)
+    zc (nx * 1) : z-wake center (returned only if `z` is given)
     """
     
     if y is None and z is None: 
@@ -41,7 +68,7 @@ def wake_centroid_3d(u=None, u_wake=None, y=None, z=None, thresh=0):
     if u_wake is None: 
         del_u = 1 - u  # assume freestream is normalized to 1
     else: 
-        del_u = u_wake
+        del_u = u_wake.copy()
         
     # apply thresholding
     del_u[del_u < thresh] = 0
@@ -462,6 +489,23 @@ def ddxi(f, i, dxi=1, edge_order=2):
     return np.gradient(f, axis=i, edge_order=edge_order) / dxi
 
 
+def fit_linear(x, y): 
+    """
+    Fits a line to the data (x, y) using numpy.linalg.lstsq. 
+    
+    Returns
+    -------
+    (a0, a1) : y-intercept (a0) and slope (a1) of the resulting curve
+    """
+    
+    A = np.array([np.ones(x.shape), x]).T
+    b = y
+    
+    ret = lstsq(A, b, rcond=None)
+    
+    return ret[0]
+
+
 # ============= Vorticity computation functions ================
 
 def compute_vort(sl_dict, save_ui=True, save_duidxj=True): 
@@ -501,8 +545,9 @@ def compute_vort(sl_dict, save_ui=True, save_duidxj=True):
     for i, wi_key in zip(range(3), vort_keys): 
         wi[:,:,:,i] = np.sum(wijk[:, :, :, i, :, :], axis=(-2, -1))
         sl_dict[wi_key] = wi[:,:,:,i]
-        sl_dict['keys'].append(wi)
+        sl_dict['keys'].append(wi_key)
     
+#     sl_dict['keys'].append('wi')  # technically should not save this because it is a 4D tensor
     sl_dict['wi'] = wi  # save this for further index notation computations
     
     
@@ -667,6 +712,8 @@ def compute_vort_budget(sl_dict, self=None, Ro=None, Ro_f=None, lat=45, Fr=None,
         Ro = Ro_LES/(2*np.sin(lat))  # we need this normalization
         Fr = padeopsIO.key_search_r(self.input_nml, 'fr')
         theta0 = padeopsIO.key_search_r(self.input_nml, 'tref')
+        if theta0 is None: 
+            theta0 = 1  # hotfix for if flow is not stratified
     elif Ro_f is not None: 
         Ro = Ro_f
     else: 
@@ -732,7 +779,7 @@ def compute_vort_budget(sl_dict, self=None, Ro=None, Ro_f=None, lat=45, Fr=None,
                         
     # now sum over extra axes to collapse terms
     vort_raw = {
-        '-vort_adv': adv_ij, 
+        'vort_adv': adv_ij, 
         'vort_str': str_ij,
         'vort_buoy': buoy_ij, 
         'vort_sgs': sgs_ijkm, 
