@@ -30,12 +30,13 @@ def parser(filename):
 
             res = re.search('(\S+)\s+=\s+(\S+)', line)
             if res is not None: 
-                tmp = re.sub('[dD]', 'e', res.group(2))
+                # tmp = re.sub('[dD]', 'e', res.group(2))
                 key = res.group(1)
-                try: 
-                    value = float(tmp)
-                except ValueError as e: 
-                    value = res.group(2)
+                value = cast_str_to_X(res.group(2))
+                # try: 
+                #     value = float(tmp)
+                # except ValueError as e: 
+                #     value = res.group(2)
                 # TODO: Handle boolean variables too
 
                 # print(key, value)
@@ -61,10 +62,9 @@ def writer(filepath, Namelists):
         for key in Namelists.keys(): 
             f.write('&' + key + '\n')
             for var in Namelists[key].keys(): 
-                value = Namelists[key][var]
-                if isfloat(value): 
-                    value = '{:.08e}'.format(value)
-                f.write('{:''<16} = {:s}\n'.format(var, value))
+                tmp = Namelists[key][var]
+                value = cast_to_str(tmp)
+                f.write('{:''<24} = {:s}\n'.format(var, value))
             f.write('/\n')
 
 
@@ -72,9 +72,50 @@ def isfloat(value):
     """
     Checks if the input can be cast into a float. 
     https://www.programiz.com/python-programming/examples/check-string-number
+
+    Deprecated 06/07/2023
     """
     try: 
         float(value)
         return True
     except ValueError: 
         return False
+
+
+def cast_str_to_X(value): 
+    """
+    Tries to cast the input value to an integer, then a float. If both, then returns the original string. 
+    """
+
+    # try integer casting: 
+    try: 
+        tmp = int(value)
+        return tmp
+    except ValueError: 
+        pass
+
+    # integer casting failed, try float
+    try: 
+        tmp1 = re.sub('[dD]', 'e', value)  # Fortran uses d, D as well as e, E for exponential notation
+        tmp2 = float(tmp1)
+        return tmp2
+    except ValueError: 
+        return value  # returns original value
+    
+
+def cast_to_str(value): 
+    """
+    Takes a value of unknown type (value) and casts to a fortran namelist-readable string. 
+    """
+
+    # note: this is NOT a try/except statement because we want floats (that are also integers)
+    # to be parsed as floats, not integers. 
+    if type(value) == int: 
+        return str(value)
+
+    try: 
+        tmp = float(value)
+        return '{:.08e}'.format(tmp)
+    except ValueError: 
+        return value  # return the original string 
+
