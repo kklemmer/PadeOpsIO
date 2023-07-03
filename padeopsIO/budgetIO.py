@@ -132,15 +132,15 @@ class BudgetIO():
                 
         # do namelist stuff - this is necessary if Lx, Ly, ... etc were not passed in. 
         try: 
-            self._read_inputfile(**kwargs)
+            self._read_inputfile(**kwargs)  # this initializes convenience variables
             
-        except FileNotFoundError as err:  # TODO fix this
-            warnings.warn("_init_padeops(): Could not find input file. ")
-            print(err)
-            raise err
+#         except FileNotFoundError as err:  # TODO fix this
+#             warnings.warn("_init_padeops(): Could not find input file. ")
+#             print(err)
+#             raise err
             
         except IndexError as err: 
-            warnings.warn("_init_padeops(): Could not find input file. ")
+            warnings.warn("_init_padeops(): Could not find input file. Perhaps the directory does not exist? ")
             print(err)
             raise err
         
@@ -157,13 +157,13 @@ class BudgetIO():
                 print('_init_padeops(): Initializing wind turbine array object')
                 
             turb_dir = self.input_nml['windturbines']['turbinfodir']
-            ADM_type = self.input_nml['windturbines']['adm_type']
             num_turbines = self.input_nml['windturbines']['num_turbines']
+            ADM_type = self.input_nml['windturbines']['adm_type']
             try: 
                 self.turbineArray = turbineArray.TurbineArray(turb_dir, 
-                                                                ADM_type=ADM_type, 
-                                                                num_turbines=num_turbines, 
-                                                                verbose=self.verbose)
+                                                              num_turbines=num_turbines, 
+                                                              ADM_type=ADM_type, 
+                                                              verbose=self.verbose)
                 self.associate_turbines = True
 
                 if self.verbose: 
@@ -175,13 +175,7 @@ class BudgetIO():
                 if self.verbose: 
                     print(e)
 
-
-        # These lines are taken almost verbatim from PadeOpsViz.py
-        # read accompanying info file
-        # may throw OSError
-        
-        # TODO this may all be in the input file. 
-        
+        # Throw an error if no RunID is found 
         if 'runid' not in self.__dict__:
             raise AttributeError("No RunID found. To explicitly pass one in, use kwarg: runid=")
         
@@ -189,17 +183,8 @@ class BudgetIO():
         # self.info = np.genfromtxt(info_fname, dtype=None)  
         # TODO: fix reading .info files
         self.time = 0  # self.info[0]
-        
-        if self.associate_nml: 
-            self.nx = self.input_nml['input']['nx']
-            self.ny = self.input_nml['input']['ny']
-            self.nz = self.input_nml['input']['nz']
-        else: 
-            self.nx = int(self.info[1])
-            self.ny = int(self.info[2])
-            self.nz = int(self.info[3])
-    
-        # loads the grid, normalizes if associate_turbines = True (Should be done AFTER loading turbines)
+            
+        # loads the grid, normalizes if associate_turbines = True (Should be done AFTER loading turbines to normalize origin)
         if not self.associate_grid: 
             self._load_grid(**kwargs)
             
@@ -211,9 +196,6 @@ class BudgetIO():
         
         try: 
             self.last_tidx = self.unique_tidx(return_last=True)  # last tidx in the run with fields
-            
-            # The following are initialized as the final saved instanteous field and budget: 
-            self.field_tidx = self.last_tidx
             self.associate_fields = True
 
         except ValueError as e: 
@@ -228,7 +210,10 @@ class BudgetIO():
             warnings.warn("_init_padeops(): No budget files found!")
             if self.verbose: 
                 print("\tNo budget files found.")
-        
+            
+        if self.associate_fields: # The following are initialized as the final saved instanteous field and budget: 
+            self.field_tidx = self.last_tidx
+
         if self.associate_budgets: 
             self.last_n = self.last_budget_n()  # last tidx with an associated budget
             self.budget_tidx = self.unique_budget_tidx()  # but may be changed by the user
@@ -245,56 +230,49 @@ class BudgetIO():
         if f90nml is None: 
             warnings.warn('_read_inputfile(): No namelist reader loaded. ')
             return
-
-        inputfile_ls = []  
-                
-        if 'runid' in kwargs.keys(): 
-            # if given a runid, search for an inputfile with Run{runid} in the name
-            inputfile_ls = glob.glob(self.dir_name + os.sep + 'Run{:02d}*.dat'.format(kwargs['runid']))
                         
-            if len(inputfile_ls) == 0: 
-                pass
-#                 if self.verbose: 
-#                     warnings.warn('_read_inputfile(): runid {:d} requested, \
-#                         but no matching inputfile found was found.'.format(kwargs['runid']))
+        # search all files ending in '*.dat' 
+        inputfile_ls = glob.glob(self.dir_name + os.sep + '*.dat')  # for now, just search this 
 
-                # try to search all input files '*.dat' for the proper run and match it
-                for inputfile in glob.glob(self.dir_name + os.sep + '*.dat'): 
-                    input_nml = f90nml.read(inputfile) 
-                    if self.verbose: 
-                        print('_read_inputfile(): trying inputfile', inputfile)
-                        
-                    try: 
-                        tmp_runid = input_nml['IO']['runid']
-                    except KeyError as e: 
-                        if self.verbose: 
-                            print('_read_inputfile(): no runid for', inputfile)
-                        tmp_runid = None
+        # there should only be one input file for each RunID number
+#         if len(inputfile_ls) > 1: 
+#             warnings.warn('_read_inputfile(): Multiple files ending in *.dat found')
+            
+        if self.verbose: 
+            print("\tFound the following files:", inputfile_ls)
 
-                    if tmp_runid == kwargs['runid']: 
-                        self.input_nml = input_nml
-                        self._convenience_variables(**kwargs)  # make some variables in the metadata more accessible, also loads grid
-                        self.associate_nml = True  # successfully loaded input file
-                        
-                        if self.verbose: 
-                            print('_read_inputfile(): matched RunID with', inputfile)
-                        return
-                        
-        # if no runid given, or if the previous search failed, search all files ending in '*.dat' 
-        if len(inputfile_ls) == 0: 
-            inputfile_ls = glob.glob(self.dir_name + os.sep + '*.dat')  # for now, just search this. # TODO improve later? 
-
-        # there should only be one input file for each run 
-        if len(inputfile_ls) > 1: 
-            warnings.warn('_read_inputfile(): Multiple files ending in *.dat found')
+        # try to search all input files '*.dat' for the proper run and match it
+        for inputfile in glob.glob(self.dir_name + os.sep + '*.dat'): 
+            input_nml = f90nml.read(inputfile) 
             if self.verbose: 
-                print("    Found the following files:", inputfile_ls)
+                print('\t_read_inputfile(): trying inputfile', inputfile)
+
+            try: 
+                tmp_runid = input_nml['IO']['runid']
+            except KeyError as e: 
+                if self.verbose: 
+                    print('\t_read_inputfile(): no runid for', inputfile)
+                tmp_runid = None  # not all input files have a RunID
         
+            if 'runid' in kwargs.keys(): 
+                if tmp_runid == kwargs['runid']: 
+                    self.input_nml = input_nml
+                    self._convenience_variables(**kwargs)  # make some variables in the metadata more accessible, also loads grid
+                    self.associate_nml = True  # successfully loaded input file
+
+                    if self.verbose: 
+                        print('\t_read_inputfile(): matched RunID with', inputfile)
+                    return
+            elif self.verbose: 
+                print("\t_read_inputfile(): WARNING - no keyword `runid` given to init.")
+
         # if there are still no input files found, we've got a problem 
         # TODO: trim dir_name() to remove trailing spaces
         
+        warnings.warn('_read_inputfile(): No match to given `runid`, picking the first inputfile to read.')
+        
         if self.verbose: 
-            print("Reading namelist file from {}".format(inputfile_ls[0]))
+            print("\t_read_inputfile(): Reading namelist file from {}".format(inputfile_ls[0]))
             
         self.input_nml = f90nml.read(inputfile_ls[0])
         self._convenience_variables(**kwargs)  # make some variables in the metadata more accessible
@@ -1018,7 +996,7 @@ class BudgetIO():
             xid, yid, zid = self.get_xids(x=xlim, y=ylim, z=zlim, return_none=True, return_slice=True)
             xLine = self.xLine
             yLine = self.yLine
-            zLine = self.zLine
+            zLine = self.zLine  # TODO fix for non-slices
         else: 
             xid, yid, zid = self.get_xids(x=xlim, y=ylim, z=zlim, 
                                           x_ax=sl['x'], y_ax=sl['y'], z_ax=sl['z'], 
@@ -1034,8 +1012,11 @@ class BudgetIO():
             
             if type(field) == dict: 
                 # iterate through dictionary of fields
-                for key in field.keys(): 
+                if keys is None: 
+                    keys = field.keys()
+                for key in keys: 
                     slices[key] = np.squeeze(field[key][xid, yid, zid])
+                slices['keys'] = keys
             else: 
                 slices['field'] = np.squeeze(field[xid, yid, zid])
 
@@ -1483,44 +1464,104 @@ class BudgetIO():
         return sl
     
     
-    def read_turb_power(self, tidx=None, turb=1, steady=True, nondim=False): 
+    def _read_turb_file(self, prop, tid=None, turb=1, steady=True): 
         """
-        Reads the turbine power from the output file *.pow. 
+        Reads the turbine power from the output files 
 
-        tidx (int) : time ID to read turbine power from. Default: calls self.unique_budget_tidx()
+        Arguments
+        ---------
+        prop (str) : property string name, either 'power', 'uvel', or 'vvel'
+        tidx (int) : time ID to read turbine power from. Default: calls self.unique_tidx()
         turb (int) : Turbine number. Default 1
         steady (bool) : Averages results if True. If False, returns an array containing the contents of `*.pow`. 
-        nondim (bool) : Non-dimensionalizes the output power. This applies to ADM Type 5, and to any other
-            turbine model that outputs dimensional power (0.5*rho*u^3*A*C_P)
         """
-        if tidx is None: 
-            try: 
-                tidx = self.last_tidx
-            except ValueError as e:   # TODO - Fix this!! 
-                tidx = self.unique_tidx(return_last=True)
+        if prop == 'power': 
+            fstr = '/Run{:02d}_t{:06d}_turbP{:02}.pow'
+        elif prop == 'uvel': 
+            fstr = '/Run{:02d}_t{:06d}_turbU{:02}.vel'
+        elif prop == 'vvel': 
+            fstr = '/Run{:02d}_t{:06d}_turbV{:02}.vel'
+        else: 
+            raise ValueError("_read_turb_prop(): `prop` property must be 'power', 'uvel', or 'vvel'")
         
-        fname = self.dir_name + '/Run{:02d}_t{:06d}_turbP{:02}.pow'.format(self.runid, tidx, turb)
-        if self.verbose: 
-            print("  Reading", fname)
-            
-        power = np.genfromtxt(fname, dtype=float)
-                
-        pnormfact = 1.
-        if nondim: 
+        if tid is None: 
             try: 
-                # TODO this will break for multiple turbines, probably
-                pnormfact = 0.5*np.pi/4*self.turbineArray.diam**2
-            except AttributeError as e: 
-                print(e)
-                print("Tried to normalize power, but failed. Perhaps there is more than one turbine in the simulation?")
-
-        power /= pnormfact
-
+                tid = self.last_tidx
+            except ValueError as e:   # TODO - Fix this!! 
+                tid = self.unique_tidx(return_last=True)
+        
+        fname = self.dir_name + fstr.format(self.runid, tid, turb)
+        if self.verbose: 
+            print("\tReading", fname)
+            
+        ret = np.genfromtxt(fname, dtype=float)  # read fortran ASCII output file
+        
+        # for some reason, np.genfromtxt makes a size 0 array for length-1 text files. 
+        # Hotfix: multiply by 1. 
+        ret = ret*1  
+        
         if steady: 
-            return np.mean(power)
+            return np.mean(ret)
+        else: 
+            return ret  # this is an array
+        
+        
+    def read_turb_property(self, tidx, prop_str, **kwargs): 
+        """
+        Helper function to read turbine power, uvel, vvel. Calls self._read_turb_file() 
+        for every time ID in tidx. 
+        """
+        prop_time = []  # power array to return
 
-        return power/pnormfact  # this is an array
+        if tidx is None: 
+            tidx = [self.last_tidx]  # just try the last TIDX by default
+        elif tidx == 'all': 
+            tidx = self.unique_tidx()
+        
+        for tid in tidx:  # loop through time IDs and call helper function
+            prop = self._read_turb_file(prop_str, tid=tid, **kwargs)
+            if type(prop) == np.float64:  # if returned is not an array, cast to an array
+                prop = np.array([prop])
+            prop_time.append(prop)
 
+        prop_time = np.concatenate(prop_time)  # make into an array
+        
+        # only select unique values... for some reason some values are written twice once budgets start up
+        _, prop_index = np.unique(prop_time, return_index=True)
+
+        return prop_time[np.sort(prop_index)]  # this should make sure that n_powers = n_tidx
+
+
+    def read_turb_power(self, tidx=None, **kwargs): 
+        """
+        Reads the turbine power files output by LES in Actuator Disk type 2 and type 5. 
+        
+        Arguments
+        ---------
+        tidx (iterable) : list or array of time IDs to load data. Default: self.last_tidx. 
+            If tidx = 'all', then this calls self.unique_tidx()
+        **kwargs() : see self._read_turb_file()
+        """
+        return self.read_turb_property(tidx, 'power', **kwargs)
+    
+    
+    def read_turb_uvel(self, tidx=None, **kwargs): 
+        """
+        Reads turbine u-velocity. 
+        
+        See self.read_turb_power() and self._read_turb_file()
+        """
+        return self.read_turb_property(tidx, 'uvel', **kwargs)
+    
+    
+    def read_turb_vvel(self, tidx=None, **kwargs): 
+        """
+        Reads turbine v-velocity
+        
+        See self.read_turb_power() and self._read_turb_file()
+        """
+        return self.read_turb_property(tidx, 'vvel', **kwargs)
+    
 
 if __name__ == "__main__": 
     """
