@@ -6,6 +6,40 @@ import glob
 from padeopsIO.io_utils import key_search_r
 from padeopsIO.wake_utils import get_xids
 
+
+def get_correction(CT, fwidth, D): 
+    """
+    Computes the correction factor M as defined by Taylor expansion of Shapiro, et al. (2019)
+
+    Parameters
+    ----------
+    return_correction (bool) : Optional, returns correction factor if True. Default: False
+    """
+
+    M = 1/(1. + CT/2. * fwidth/np.sqrt(3*np.pi)/D)
+    return M
+
+
+def get_REWS(ufield, kernel, M): 
+    """
+    Computes the rotor equivalent wind speed
+    """
+    return np.sum(ufield*kernel)*M
+
+
+def get_power(ud, D=1, rho=1, cpp=2): 
+    """
+    Computes turbine power
+    
+    ud : disk velocity
+    D : rotor diameter
+    rho : air density
+    cpp : C_P' (local power) = P/(0.5*rho*D*u_d^3)
+    """
+    
+    return 0.5*rho*D**2/4*np.pi*cpp*ud**3
+
+            
 class Turbine(): 
     """
     Constructs a Turbine object with properties from the turbine namelist from the input files. 
@@ -29,6 +63,9 @@ class Turbine():
         
         self.verbose = verbose
         self.input_nml = nml  # save the whole namelist
+        self.kernel = None
+        self.M = None
+        self.ud = None
                 
         for req in Turbine.req_vars: 
             ret = key_search_r(nml, req)
@@ -73,15 +110,48 @@ class Turbine():
         if fwidth is None or not use_corr: 
             M = 1. 
         else: 
-            M = 1/(1. + self.ct/2 * fwidth/np.sqrt(3*np.pi)/self.diam)
+            M = get_correction(self.ct, fwidth, self.diam) 
             
         if return_correction: 
             return M
         else: 
             self.M = M
-        
+            
     
-    def get_kernel(self, x, y, z, ADM_type=5, fwidth=None, buffer_fact=3, return_kernel=False): 
+    def get_REWS(self, ufield, kernel=None): 
+        """
+        Returns the rotor-equivalent windspeed for a wind field that has the same
+        dimensions and axes as the forcing kernel. 
+        """
+        
+        if self.kernel is None and kernel is None: 
+            raise ValueError('Turbine.get_REWS(): No kernel found')
+        
+        if self.M is None: 
+            self.get_correction()
+        
+        return get_REWS(ufield, self.kernel, self.M)
+        
+        
+    def get_power(self, ud=None, ufield=None): 
+        """
+        Compute the turbine power using P = 1/2*rho*A_d*C_P'*ud^3 where C_P' = C_T'
+        """
+        
+        if ud is None and ufield is not None: 
+            ud = self.get_REWS(ufield)
+        
+        return get_power(ud, D=self.diam, rho=1, cpp=self.ct)
+
+    
+    def get_kernel(self, x, y, z, 
+                   ADM_type=5, 
+                   fwidth=None, 
+                   buffer_fact=3, 
+                   return_kernel=False, 
+                   normalize=True, 
+                   overwrite=False
+                  ): 
         """
         Compute a 3D forcing kernel based off of the coordinate axes xLine, yLine, zLine given that
         these axes define a coordinate system consistent with the turbine xloc, yloc, zloc. 
@@ -100,6 +170,12 @@ class Turbine():
         kernel (nx * ny * nz) : forcing kernel, only if return_kernel=True
         """
         
+        if self.kernel is not None and not overwrite: 
+            if return_kernel: 
+                return self.kernel
+            else: 
+                return  # bypass if the kernel is already built
+        
         # begin ADM 5
         if ADM_type == 5: 
             
@@ -110,6 +186,7 @@ class Turbine():
             
             # get control points: 
             xcs, ycs, zcs = self._get_ctrl_pts(x, y, z)  
+            
             C1 = (6/np.pi/fwidth**2)**(1.5)  # normalizing constant
 
             kernel = np.zeros((len(x), len(y), len(z)))
@@ -137,8 +214,12 @@ class Turbine():
             kernel[kernel < 1e-10] = 0  # set these identically to zero, mirroring PadeOps implementation
             
             dx = x[1]-x[0]; dy = y[1]-y[0]; dz = z[1]-z[0]
-            kernel /= np.sum(kernel)*dx*dy*dz  # normalize such that the kernel integrates to 1
-            # note that np.sum(kernel)*dx*dy*dz ≈ number of control points 
+            
+            if normalize:
+                kernel /= np.sum(kernel)
+            else: 
+                kernel /= np.sum(kernel)*dx*dy*dz  # normalize such that the kernel integrates to 1
+                # note that np.sum(kernel)*dx*dy*dz ≈ number of control points 
             
             if return_kernel:  # return if requested
                 return kernel
@@ -178,7 +259,33 @@ class Turbine():
         yctrl = yravel[mask] + self.yloc
         zctrl = zravel[mask] + self.zloc
         
-        return xctrl, yctrl, zctrl
+        xc, yc, zc = self._rotate_ctrl_pts(xctrl, yctrl, zctrl)
+        
+        return xc, yc, zc  # xctrl, yctrl, zctrl
+    
+    
+    def _rotate_ctrl_pts(self, xc, yc, zc): 
+        """
+        Rotates control points with sign conventions: 
+            Positive yaw = +z (e.g., Howland, et al. (2022))
+            Positive tilt = +y (e.g. Bossuyt, et al. (2021))
+        """
+        
+        if self.yaw == 0 and self.tilt == 0: 
+            return (xc, yc, zc)
+        yaw = self.yaw * np.pi/180
+        tilt = self.tilt * np.pi/180
+        
+        xtmp = (xc-self.xloc)*np.cos(yaw) - (yc-self.yloc)*np.sin(yaw) + self.xloc
+        ytmp = (xc-self.xloc)*np.sin(yaw) + (yc-self.yloc)*np.cos(yaw) + self.yloc 
+        ztmp = zc
+        
+        # TODO: Check tilt sign convention
+        xc = (xtmp-self.xloc)*np.cos(tilt) + (ztmp-self.zloc)*np.sin(tilt) + self.xloc
+        yc = ytmp
+        zc = -(xtmp-self.xloc)*np.sin(tilt) + (ztmp-self.zloc)*np.cos(tilt) + self.zloc
+        
+        return (xc, yc, zc)
         
         
     def __lt__(self, other): 
