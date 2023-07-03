@@ -5,7 +5,7 @@ import csv
 import re
 import os
 import padeopsIO
-from numpy import array as array
+from numpy import array, ndarray
 
 
 def read_list(dir_name): 
@@ -140,3 +140,28 @@ def get_timekey(self, budget=False):
         return {key: timekey[key] for key in keys}
     else: 
         return timekey
+    
+
+def structure_to_dict(arr): 
+    """
+    Function to convert a numpy structured array to a nested dictionary. 
+
+    See also: 
+    https://docs.scipy.org/doc/numpy-1.14.0/user/basics.rec.html
+    """
+    keys = arr.dtype.names  
+    if keys is None: 
+        raise TypeError('structure_to_dict(): `ndarray` argument is not a structured datatype')
+    ret = {}
+
+    for key in keys:  
+        val = arr[key][0][0]
+
+        if type(val) == ndarray and val.dtype.names is not None: 
+            # recursive call
+            val = structure_to_dict(val)
+            ret[key] = val  # store the dictionary
+        else: 
+            ret[key] = val.flat[0]  # store the key/value pairing
+        
+    return ret  # return (nested) dict
