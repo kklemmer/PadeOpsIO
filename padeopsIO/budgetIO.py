@@ -891,7 +891,11 @@ class BudgetIO():
             budget_terms = self.existing_terms(include_wakes=include_wakes)
             
         elif budget_terms=='RANS': 
-            budget_terms = ['ubar', 'vbar', 'wbar', 'pbar', 'uu', 'uv', 'uw', 'vv', 'vw', 'ww', 'dpdx', 'dpdy', 'dpdz']
+            budget_terms = ['ubar', 'vbar', 'wbar', 
+                            'pbar', 'Tbar', 
+                            'uu', 'uv', 'uw', 'vv', 'vw', 'ww', 
+                            'dpdx', 'dpdy', 'dpdz',
+                            'tau11', 'tau12', 'tau13', 'tau22', 'tau23', 'tau33']
 
         elif type(budget_terms)==str: 
             warnings.warn("keyword argument budget_terms must be either 'default', 'all', 'RANS' or a list.")
