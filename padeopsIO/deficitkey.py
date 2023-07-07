@@ -31,6 +31,34 @@ class bidict(dict):
         if self[key] in self.inverse and not self.inverse[self[key]]: 
             del self.inverse[self[key]]
         super(bidict, self).__delitem__(key)
+
+
+def key_search_r(nested_dict, key):
+    """
+    Performs a recursive search for the dictionary key `key` in any of the dictionaries contained 
+    inside `nested_dict`. Returns the value of nested_dict[key] at the first match. 
+    
+    Parameters
+    ----------
+    nested_dict (dict-like) : dictionary [possibly of dictionaries]
+    key (str) : dictionary key to match
+    
+    Returns
+    -------
+    nested_dict[key] if successful, None otherwise. 
+    """
+    
+    try: 
+        for k in nested_dict.keys(): 
+            if k == key: 
+                return nested_dict[k]
+            else: 
+                res = key_search_r(nested_dict[k], key)
+                if res is not None: 
+                    return res
+        
+    except AttributeError as e: 
+        return
     
     
 def get_key(): 
@@ -39,130 +67,60 @@ def get_key():
     a tuple-look up ordered (budget #, term #) as defined in e.g. budget_time_avg.F90. 
     """
     key = {  # BUDGET 0 TERMS: (1st and second order averages, scalars excluded)
-        'ubar': (0, 1), 
-        'vbar': (0, 2), 
-        'wbar': (0, 3), 
-        'uu': (0, 4), 
-        'uv': (0, 5), 
-        'uw': (0, 6), 
-        'vv': (0, 7), 
-        'vw': (0, 8), 
-        'ww': (0, 9), 
-        'pbar': (0, 10), 
-        'tau11': (0, 11), 
-        'tau12': (0, 12), 
-        'tau13': (0, 13), 
-        'tau22': (0, 14), 
-        'tau23': (0, 15), 
-        'tau33': (0, 16), 
-        'pu': (0, 17), 
-        'pv': (0, 18), 
-        'pw': (0, 19), 
-        'uk': (0, 20), 
-        'vk': (0, 21), 
-        'wk': (0, 22), 
-        'ujtau1j': (0, 23), 
-        'ujtau2j': (0, 24), 
-        'ujtau3j': (0, 25), 
-        'Tbar': (0, 26), 
-        'uT': (0, 27), 
-        'vT': (0, 28), 
-        'wT': (0, 29), 
-        'TT': (0, 30), 
-        'theta': (0, 31), 
-        # BUDGET 1 TERMS: (momentum)
-        'DuDt': (1, 1),  # x-advection
-        'dpdx': (1, 2),  # x-pressure gradient
-        'xSGS': (1, 3),  # x-sub grid stresses
-        'xAD': (1, 4),   # x-Actuator disk
-        'DvDt': (1, 5),  
-        'dpdy': (1, 6), 
-        'ySGS': (1, 7), 
-        'DwDt': (1, 8), 
-        'dpdz': (1, 9), 
-        'zSGS': (1, 10),
-        'xCor': (1, 11), # x-coriolis
-        'xGeo': (1, 12), # x-geostrophic pressure grad. 
-        'yCor': (1, 13), 
-        'yGeo': (1, 14), 
-        'yAD': (1, 15), 
-        'zB': (1,16),
-        # BUDGET 2 TERMS: (MKE)  TODO - improve the naming keys
-        'MKE_TKE_loss': (2, 1), 
-        'MKE_adv': (2, 2), 
-        'MKE_tau_transport': (2, 3), 
-        'MKE_p_transport': (2, 4), 
-        'MKE_SGS_transport': (2, 5), 
-        'MKE_dissipation': (2, 6), 
-        'MKE_AD': (2, 7), 
-        'MKE_geostrophic': (2, 8), 
-        'MKE_coriolis': (2, 9),
-        # BUDGET 3 TERMS: (TKE)
-        'TKE_shear_production': (3, 1),
-        'TKE_adv': (3, 2), 
-        'TKE_turb_transport': (3, 3), 
-        #'TKE_p_strain': (3, 4), 
-        'TKE_p_transport': (3, 4), 
-        'TKE_SGS_transport': (3, 5), 
-        'TKE_dissipation': (3, 6), 
-        'TKE_AD': (3, 7), 
-        'TKE_buoyancy': (3, 8), 
-        #'TKE_AD': (3, 9), 
-        # BUDGET 4 TERMS: Reynolds stress budgets
-        'uu_shear_production':              (4,1),
-        'uu_adv':                           (4,2),
-        'uu_turb_transport':                (4,3),
-        'uu_p_strain':               (4,4),
-        'uu_p_transport':            (4,5),
-        'uu_SGS_transport':                 (4,6),
-        'uu_dissipation':                   (4,7),
-        'uu_buoyancy':                      (4,8),
-        'uu_coriolis':                      (4,9),
-        'uu_AD':                            (4,10),
-        'vv_shear_production':              (4,11),
-        'vv_adv':                           (4,12),
-        'vv_turb_transport':                (4,13),
-        'vv_p_strain':               (4,14),
-        'vv_p_transport':            (4,15),
-        'vv_SGS_transport':                 (4,16),
-        'vv_dissipation':                   (4,17),
-        'vv_buoyancy': (4,18),
-        'vv_coriolis': (4,19),
-        'vv_AD': (4,20),
-        'ww_shear_production': (4,21),
-        'ww_adv': (4,22),
-        'ww_turb_transport': (4,23),
-        'ww_p_strain': (4,24),
-        'ww_p_transport': (4,25),
-        'ww_SGS_transport': (4,26),
-        'ww_dissipation': (4,27),
-        'ww_buoyancy': (4,28),
-        'ww_coriolis': (4,29),
-        'ww_AD': (4,30),
-        'uw_shear_production': (4,31),
-        'uw_adv': (4,32),
-        'uw_turb_transport': (4,33),
-        'uw_p_strain': (4,34),
-        'uw_p_transport': (4,35),
-        'uw_SGS_transport': (4,36),
-        'uw_dissipation': (4,37),
-        'uw_buoyancy': (4,38),
-        'uw_coriolis': (4,39),
-        'uw_AD': (4,40),
-        'vw_shear_production': (4,41),
-        'vw_adv': (4,42),
-        'vw_turb_transport': (4,43),
-        'vw_p_strain': (4,44),
-        'vw_p_transport': (4,45),
-        'vw_SGS_transport': (4,46),
-        'vw_dissipation': (4,47),
-        'vw_buoyancy': (4,48),
-        'vw_coriolis': (4,49),
-        'vw_AD': (4,50),
-        # BUDGET 5 TERMS: Wake deficit
-        'uwake': (5, 1), 
-        'vwake': (5, 2), 
-        'wwake': (5, 3)
+        'delta_u': (0, 1), 
+        'delta_v': (0, 2), 
+        'delta_w': (0, 3), 
+        'delta_p': (0, 4), 
+        'delta_uu': (0, 5), 
+        'delta_uv': (0, 6), 
+        'delta_uw': (0, 7), 
+        'delta_vv': (0, 8), 
+        'delta_vw': (0, 9), 
+        'delta_ww': (0, 10), 
+        'delta_u_base_u': (0, 11), 
+        'delta_u_base_v': (0, 12), 
+        'base_u_delta_v': (0, 13), 
+        'delta_u_base_w': (0, 14), 
+        'base_u_delta_w': (0, 15), 
+        'delta_v_base_v': (0, 16), 
+        'delta_v_base_w': (0, 17), 
+        'base_v_delta_w': (0, 18), 
+        'delta_w_base_w': (0, 19),
+        # BUDGET 1 TERMS: () 
+        'xAdv_total': (1,1),
+        'xAdv_base_delta_mean': (1, 2),  # x-advection
+        'xAdv_delta_delta_mean': (1, 3),  # x-advection
+        'xAdv_delta_base_mean': (1, 4),  # x-advection
+        'xAdv_base_delta_fluc': (1, 5),  # x-advection
+        'xAdv_delta_delta_fluc': (1, 6),  # x-advection
+        'xAdv_delta_base_fluc': (1, 7),  # x-advection
+        'dpdx': (1, 8),  # x-pressure gradient
+        'xSGS': (1, 9),  # x-sub grid stresses
+        'xAD': (1, 10),   # x-Actuator disk
+        'yAdv_total': (1,11),
+        'yAdv_base_delta_mean': (1, 12),  # y-advection
+        'yAdv_delta_delta_mean': (1, 13),  # y-advection
+        'yAdv_delta_base_mean': (1, 14),  # y-advection
+        'yAdv_base_delta_fluc': (1, 15),  # y-advection
+        'yAdv_delta_delta_fluc': (1, 16),  # y-advection
+        'yAdv_delta_base_fluc': (1, 17),  # y-advection
+        'dpdy': (1, 18), 
+        'ySGS': (1, 19), 
+        'yAD' : (1, 20),
+        'zAdv_total': (1,21),
+        'zAdv_base_delta_mean': (1, 22),  # z-advection
+        'zAdv_delta_delta_mean': (1, 23),  # z-advection
+        'zAdv_delta_base_mean': (1, 24),  # z-advection
+        'zAdv_base_delta_fluc': (1, 25),  # z-advection
+        'zAdv_delta_delta_fluc': (1, 26),  # z-advection
+        'zAdv_delta_base_fluc': (1, 27),  # z-advection
+        'dpdz': (1, 28), 
+        'zSGS': (1, 29),
+        'zB': (1, 30),
+        'xCor': (1, 31), # x-coriolis
+        'xGeo': (1, 32), # x-geostrophic pressure grad. 
+        'yCor': (1, 33), 
+        'yGeo': (1, 34)
         }
     
     return bidict(key)

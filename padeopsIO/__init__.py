@@ -9,3 +9,4 @@ from .budgetIO import *
 from .wake_utils import *
 from .io_utils import *
 from .yawIO import *
+from .deficitIO_new import *
