@@ -92,13 +92,13 @@ def wake_centroid_3d(u=None, u_wake=None, y=None, z=None, thresh=0):
         return ret
     
     
-def usq_mean(run, diam=1, xlim=None): 
+def usq_mean(case, diam=1, xlim=None): 
     """
     Returns the mean squared velocity within the wake region 
     
     Parameters
     ----------
-    run : BudgetIO object
+    case : BudgetIO object
     diam : threshold for (square) averaging wake region; constant in x
     xlim : 
     
@@ -108,7 +108,7 @@ def usq_mean(run, diam=1, xlim=None):
     xlim (opt) : [nx] array xLine associated with the given xlim
     """
     
-    sl = run.slice(budget_terms=['ubar'], xlim=xlim, ylim=(run.Ly/2-diam, run.Ly/2+diam), zlim=(run.Lz/2-diam, run.Lz/2+diam))
+    sl = case.slice(budget_terms=['ubar'], xlim=xlim, ylim=(case.Ly/2-diam, case.Ly/2+diam), zlim=(case.Lz/2-diam, case.Lz/2+diam))
     ubar_sq = np.mean(np.mean(sl['ubar']**2, axis=1), axis=1)
     
     if xlim is not None: 
@@ -244,7 +244,7 @@ def rans_budgets(run, xlim=None, ylim=None, zlim=None, sl=None,
         rans_z['dwwdz'] = -partialz(sl['ww'], run.dz)
         
         if compute_residual: 
-            rans_z['residual'] = sum(rans_z[key] for key in rans_zkeys())
+            rans_z['residual'] = sum(rans_z[key] for key in rans_z.keys())
         
         if combine_terms: 
             rans_zcomb = {key: rans_z[key] for key in rans_z.keys() if key not in (z_adv_terms + z_turb_terms)}
@@ -267,8 +267,6 @@ def get_xids(x=None, y=None, z=None,
              x_ax=None, y_ax=None, z_ax=None, 
              return_none=False, return_slice=False): 
     """
-    COPIED from BudgetIO.py
-    
     Translates x, y, and z limits in the physical domain to indices based on x_ax, y_ax, z_ax
 
     Arguments
@@ -315,7 +313,8 @@ def get_xids(x=None, y=None, z=None,
     else: 
         return ret
 
-# --------------- NUMERICS ----------------
+
+# ================= NUMERICS =================
 
 
 # 2D partial derivatives for x, y
@@ -477,16 +476,65 @@ def ddxi(f, i, dxi=1, edge_order=2):
     Computes partials for a field on an evenly spaced grid in the xi 
     direction along the i axis (expects 0, 1, 2). 
     
-    Arguments
-    ---------
+    Parameters
+    ----------
     f (array-like) : field with at least i dimensions
     i (int) : integer to differentiate along  (subtracts 1 for python)
     dxi (float) : normalization factor, default 1
+    edge_order : optional, float
+        Order of differentiation along edges
     
     Returns df/dxi
     """
     
     return np.gradient(f, axis=i, edge_order=edge_order) / dxi
+
+
+def div(f, dx=(1, 1, 1), edge_order=2, axis=-1, sum=True): 
+    """
+    Computes the 3D divergence of vector or tensor field f: dfi/dxi
+
+    Parameters
+    ----------
+    f : (Nx, Ny, Nz, 3) or (Nx, Ny, Nz, ...) array
+        Vector or tensor field f 
+    dx : (3, ) array-like
+        discretization in 3 dimensions. 
+    edge_order : optional, int
+        Order of differentiation, default 2.  
+    axis : optional, int
+        Axis to compute divergence, default -1 
+        (Requires that f.shape[axis] = 3)
+    sum : bool
+        if True, performs implicit summation over repeated indices. 
+        Default True
+
+    Returns
+    -------
+    dfi/dxi : f.shape array (if sum=True) OR drops the `axis` 
+        axis if sum=False
+    """
+
+    res = np.zeros(f.shape)
+
+    def get_slice(ndim, axis, index): 
+        """
+        Helper function to slice axis `axis` from ndarray 
+        """
+        s = [slice(None) for i in range(ndim)]
+        s[axis] = slice(index, index+1)
+        return tuple(s)
+
+    # compute partial derivatives: 
+    for i in range(3): 
+        s = get_slice(f.ndim, axis, i)
+
+        res[s] = ddxi(f[s], i, dx[i], edge_order=edge_order)
+
+    if sum: 
+        return np.sum(res, axis=axis)
+    else: 
+        return res
 
 
 def fit_linear(x, y): 
@@ -506,70 +554,41 @@ def fit_linear(x, y):
     return ret[0]
 
 
-# ============= Vorticity computation functions ================
+# ================= Fluid tensor functions ===================
+    
 
-def compute_vort(sl_dict, save_ui=True, save_duidxj=True): 
-    """
-    Computes the vorticity vector and adds `wx`, `wy`, and `wz` the keys field. 
-    
-    Parameters 
-    ----------
-    sl_dict (dict) : slice from BudgetIO.slice()
-    save_duidxj (bool) : saves intermediate key `duidxj` as a 5D tensor in the dictionary, but 
-        does not append to the keys field. Default True. 
-        
-    Returns
-    -------
-    None
-    """
-    
-    if 'duidxj' in sl_dict.keys(): 
-        duidxj = sl_dict['duidxj']
-    else: 
-        duidxj = compute_duidxj(sl_dict)
-    
-    wijk = np.zeros(duidxj.shape + (3, ))  # vorticity component tensor
-    for i in range(3): 
-        for j in range(3): 
-            for k in range(3): 
-                eijk = e_ijk(i, j, k) 
-                if eijk == 0: 
-                    continue
-                wijk[:,:,:,i,j,k] = eijk*duidxj[:,:,:,k,j]
-                
-    if save_duidxj: 
-        sl_dict['duidxj'] = duidxj
-    
-    wi = np.zeros(sl_dict['ubar'].shape + (3, ))
-    vort_keys = ['wx', 'wy', 'wz']
-    for i, wi_key in zip(range(3), vort_keys): 
-        wi[:,:,:,i] = np.sum(wijk[:, :, :, i, :, :], axis=(-2, -1))
-        sl_dict[wi_key] = wi[:,:,:,i]
-        sl_dict['keys'].append(wi_key)
-    
-#     sl_dict['keys'].append('wi')  # technically should not save this because it is a 4D tensor
-    sl_dict['wi'] = wi  # save this for further index notation computations
-    
-    
-def compute_duidxj(sl_dict, save_ui=True): 
+def compute_duidxj(sl_dict, save_ui=True, in_place=True): 
     """
     Computes partial derivatives in x, y, and z for keys 'ubar', 'vbar', 'wbar'. Assumes the the
     slice is 3D. 
     
     Parameters
     ----------
-    sl_dict (dict) : dictionary from BudgetIO.slice()
-    ret (bool) : if True, returns the computed quantities instead of appending them in the same dictionary
+    sl_dict : dict
+        dictionary from BudgetIO.slice()
+    in_place : optional, bool
+        If False, returns the computed quantities instead of appending them in the same dictionary. 
+        Default True
     
     Returns
     -------
-    duidxj (array-like) : 5D duidxj tensor, indexed [x, y, z, i, j]
+    duidxj : array-like (if in_place is False)
+        5D duidxj tensor, indexed [x, y, z, i, j]
     """
-    
-    ui = assemble_u_tensor(sl_dict)
+
+    if 'duidxj' in sl_dict.keys(): 
+        if in_place: 
+            return
+        else: 
+            return sl_dict['duidxj']
+
     if save_ui: 
-        sl_dict['ui'] = ui
-    
+        if 'ui' not in sl_dict.keys(): 
+            assemble_u_tensor(sl_dict, in_place=True)
+        ui = sl_dict['ui']
+    else: 
+        ui = assemble_u_tensor(sl_dict, in_place=False)
+
     x = sl_dict['x']
     y = sl_dict['y']
     z = sl_dict['z']
@@ -581,13 +600,81 @@ def compute_duidxj(sl_dict, save_ui=True):
     for i in range(3): 
         for j in range(3): 
             ret[:,:,:,i,j] = ddxi(ui[:,:,:,i], j, dxi=dx[j])
-            
-    return ret
+
+    if in_place: 
+        sl_dict['duidxj'] = ret
+    else: 
+        return ret
+    
+
+def compute_duiujdxj(sl_dict, in_place=True, 
+                     edge_order=2, sum=False): 
+    """
+    Computes the Reynolds stress divergence tensor d<uiuj>/dxj
+
+    Parameters
+    ----------
+    sl_dict : dict
+        dictionary from BudgetIO.slice(). 
+        Expects keys: ['uu', 'uv', 'uw', 'vv', 'vw', 'ww]
+    in_place : optional, bool
+        If False, returns the computed quantities instead of appending them in the same dictionary. 
+        Default True
+    edge_order : optional, int
+        Order of differentiation, default 2.  
+    sum : optional, bool
+        If True, combines the terms within the implicit sum over j. 
+        Default False
+    
+    Returns
+    -------
+    d<uiuj>dxj : array-like (if in_place is False)
+        5D d<uiuj>dxj tensor, indexed [x, y, z, i, j] if sum=False
+        4D tensor summed over j, indexed [x, y, z, i] if sum=True
+    """
+
+    if 'duiujdxj' in sl_dict.keys(): 
+        if in_place: 
+            return
+        else: 
+            return sl_dict['duiujdxj']
+    
+    # assemble Reynolds stress tensor
+    if not 'uiuj' in sl_dict.keys(): 
+        assemble_rs_tensor(sl_dict, in_place=True)
+
+    x = sl_dict['x']
+    y = sl_dict['y']
+    z = sl_dict['z']
+    dx = [x[1]-x[0], 
+          y[1]-y[0], 
+          z[1]-z[0]]
+
+    duiujdxj = div(sl_dict['uiuj'], dx=dx, axis=-1, 
+                   sum=sum, edge_order=edge_order)
+
+    if in_place: 
+        sl_dict['duiujdxj'] = duiujdxj
+    else: 
+        return duiujdxj
 
 
-def assemble_sgs_tensor(sl_dict): 
+def assemble_sgs_tensor(sl_dict, in_place=True): 
     """
     Reorganizes the SGS tensor terms 'tau11' etc. into a 5D tensor [x, y, z, i, j] from a 3D slice. 
+
+    Parameters
+    ----------
+    sl_dict : dict
+        dictionary from BudgetIO.slice()
+    in_place : optional, bool
+        If False, returns the computed quantities instead of appending them in the same dictionary. 
+        Default True
+    
+    Returns
+    -------
+    tau_ij : array-like (if in_place is False)
+        5D tau_ij tensor, indexed [x, y, z, i, j]
     """
     nx = len(sl_dict['x'])
     ny = len(sl_dict['y'])
@@ -604,13 +691,29 @@ def assemble_sgs_tensor(sl_dict):
     for ii in range(3): 
         for jj in range(3): 
             tau_ij[:,:,:,ii,jj] = sl_dict[terms_sgs[ii][jj]]
-            
-    return tau_ij
+
+    if in_place: 
+        sl_dict['tau_ij'] = tau_ij
+    else: 
+        return tau_ij
 
 
-def assemble_rs_tensor(sl_dict): 
+def assemble_rs_tensor(sl_dict, in_place=True): 
     """
     Reorganizes the reynolds stress tensor terms 'uu' etc. into a 5D tensor [x, y, z, i, j] from a 3D slice. 
+
+    Parameters
+    ----------
+    sl_dict : dict
+        dictionary from BudgetIO.slice()
+    in_place : optional, bool
+        If False, returns the computed quantities instead of appending them in the same dictionary. 
+        Default True
+    
+    Returns
+    -------
+    uiuj : array-like (if in_place is False)
+        5D reynolds stress (uiuj) tensor, indexed [x, y, z, i, j]
     """
     nx = len(sl_dict['x'])
     ny = len(sl_dict['y'])
@@ -628,12 +731,29 @@ def assemble_rs_tensor(sl_dict):
         for jj in range(3): 
             uiuj[:, :, :, ii, jj] = sl_dict[terms_uiuj[ii][jj]] 
             
-    return uiuj
+    if in_place: 
+        sl_dict['uiuj'] = uiuj
+    else: 
+        return uiuj
 
 
-def assemble_u_tensor(sl_dict): 
+def assemble_u_tensor(sl_dict, in_place=True): 
     """
     Reorganizes the velocity vector into a 4D tensor [x, y, z, i] for component ui
+
+    Parameters
+    ----------
+    sl_dict : dict
+        dictionary from BudgetIO.slice()
+    in_place : optional, bool
+        If False, returns the computed quantities instead of appending them in the same dictionary. 
+        Default True
+    
+    Returns
+    -------
+    ui : array-like (if in_place is False)
+        4D ui tensor, indexed [x, y, z, i]
+
     """
     nx = len(sl_dict['x'])
     ny = len(sl_dict['y'])
@@ -645,12 +765,28 @@ def assemble_u_tensor(sl_dict):
     # rearrange tensor
     for i in range(3): 
         ui[:,:,:,i] = sl_dict[terms_ui[i]]
-            
-    return ui
 
-def assemble_w_tensor(sl_dict): 
+    if in_place: 
+        sl_dict['ui'] = ui
+    else: 
+        return ui
+
+def assemble_w_tensor(sl_dict, in_place=True): 
     """
     Reorganizes the vorticity vector into a 4D tensor [x, y, z, i] for component ui
+
+    Parameters
+    ----------
+    sl_dict : dict
+        dictionary from BudgetIO.slice()
+    in_place : optional, bool
+        If False, returns the computed quantities instead of appending them in the same dictionary. 
+        Default True
+    
+    Returns
+    -------
+    wi : array-like (if in_place is False)
+        4D vorticity tensor, indexed [x, y, z, i]
     """
     nx = len(sl_dict['x'])
     ny = len(sl_dict['y'])
@@ -660,17 +796,71 @@ def assemble_w_tensor(sl_dict):
     terms_wi = ['wx', 'wy', 'wz']  # these terms might not exist and may need to be computed
 
     if not np.all([term in sl_dict.keys() for term in terms_wi]): 
-        compute_vort(sl_dict, save_ui=True, save_duidxj=True)
+        compute_vort(sl_dict, save_ui=True, in_place=True)
     
     # rearrange tensor
     for i in range(3): 
         wi[:,:,:,i] = sl_dict[terms_wi[i]]
             
-    return wi
+    if in_place: 
+        sl_dict['wi'] = wi
+    else: 
+        return wi
+
+
+# ============= Vorticity computation functions ================
+
+
+def compute_vort(sl_dict, save_ui=True, in_place=True): 
+    """
+    Computes the vorticity vector and adds `wx`, `wy`, and `wz` the keys field. 
+    
+    Parameters 
+    ----------
+    sl_dict (dict) : slice from BudgetIO.slice()
+    save_ui : bool 
+        saves intermediate key `ui` as a 4D tensor in the dictionary, but 
+        does not append to the keys field. Default True.
+    in_place : bool
+        returns result if False. Default True 
+        
+    Returns
+    -------
+    wi : (Nx, Ny, Nz, 3)
+        4D Vorticity tensor, if in_place=False
+    """
+    
+    if not 'duidxj' in sl_dict.keys(): 
+        compute_duidxj(sl_dict, in_place=True, save_ui=save_ui)
+
+    duidxj = sl_dict['duidxj']
+    
+    wijk = np.zeros(duidxj.shape + (3, ))  # vorticity component tensor
+    for i in range(3): 
+        for j in range(3): 
+            for k in range(3): 
+                eijk = e_ijk(i, j, k) 
+                if eijk == 0: 
+                    continue
+                wijk[:,:,:,i,j,k] = eijk*duidxj[:,:,:,k,j]
+    
+    wi = np.zeros(sl_dict['ubar'].shape + (3, ))
+    vort_keys = ['wx', 'wy', 'wz']
+    for i, wi_key in zip(range(3), vort_keys): 
+        wi[:,:,:,i] = np.sum(wijk[:, :, :, i, :, :], axis=(-2, -1))
+        sl_dict[wi_key] = wi[:,:,:,i]
+        sl_dict['keys'].append(wi_key)
+    
+    if in_place: 
+        sl_dict['wi'] = wi  # save this for further index notation computations
+    else: 
+        return wi
+    
 
 # ============= offline budgets: vorticity ================
 
-def compute_vort_budget(sl_dict, self=None, Ro=None, Ro_f=None, lat=45, Fr=None, theta0=300): 
+
+def compute_vort_budget(sl_dict, case=None, Ro=None, Ro_f=None, lat=45, Fr=None, theta0=300): 
     """
     Computes the offline vorticity budget in three component directions including the terms: 
         advection '-vort_adv'
@@ -684,16 +874,28 @@ def compute_vort_budget(sl_dict, self=None, Ro=None, Ro_f=None, lat=45, Fr=None,
     
     Parameters
     ----------
-    sl_dict (dict) : from BudgetIO.slice(), expects velocity, temperature, subgrid stresses, and reynolds stresses
-    Ro (float) : Rossby number as defined in LES
-    Ro_f (float) : Rossby number as defined Ro = G/(f_c * L_c), where f_c = 2*Omega*sin(lat) is the Coriolis 
+    sl_dict : dict
+        from BudgetIO.slice(), expects velocity, temperature, subgrid stresses, and reynolds stresses
+    case : BudgetIO object
+        optional, if given, gleans Ro_f, Fr, and theta_0 from the following fields in
+        the inputfile: 'ro', 'latitude', 'fr', 'tref'. Supersedes giving parameters individually; default None. 
+    Ro : float
+        Rossby number as defined in LES
+    Ro_f : float
+        Rossby number as defined Ro = G/(f_c * L_c), where f_c = 2*Omega*sin(lat) is the Coriolis 
         parmeter. Optional, supersedes Ro if both are given
-    lat (float) : Latitude in degrees, default is 45, NOT None. 
-    Fr (float) : Froude number, defined Fr = G/sqrt(g*L_c)
-    theta0 (float) : Reference potential temperature, Default 300 [K]. 
-    self (BudgetIO object) : optional, if given, gleans Ro_f, Fr, and theta_0 from the following fields in
-        the inputfile: 'ro', 'latitude', 'fr', 'tref'. Supersedes giving parameters individually; default None.  
+    lat : float
+        Latitude in degrees, default is 45, NOT None. 
+    Fr : float
+        Froude number, defined Fr = G/sqrt(g*L_c)
+    theta0 : float
+        Reference potential temperature, Default 300 [K]. 
+
+    Returns
+    -------
+    (None)
     """
+
     x = sl_dict['x']; y = sl_dict['y']; z = sl_dict['z']
     nx = len(x); ny = len(y); nz = len(z)
     dxi = [x[1]-x[0], y[1]-y[0], z[1]-z[0]]  
@@ -706,12 +908,12 @@ def compute_vort_budget(sl_dict, self=None, Ro=None, Ro_f=None, lat=45, Fr=None,
     cor_i = np.zeros((nx, ny, nz, 3))
     rs_ijkm = np.zeros((nx, ny, nz, 3, 3, 3, 3))  # also 7D
 
-    if self is not None: 
-        Ro_LES = padeopsIO.key_search_r(self.input_nml, 'ro')
-        lat = padeopsIO.key_search_r(self.input_nml, 'latitude') * np.pi/180
+    if case is not None: 
+        Ro_LES = padeopsIO.key_search_r(case.input_nml, 'ro')
+        lat = padeopsIO.key_search_r(case.input_nml, 'latitude') * np.pi/180
         Ro = Ro_LES/(2*np.sin(lat))  # we need this normalization
-        Fr = padeopsIO.key_search_r(self.input_nml, 'fr')
-        theta0 = padeopsIO.key_search_r(self.input_nml, 'tref')
+        Fr = padeopsIO.key_search_r(case.input_nml, 'fr')
+        theta0 = padeopsIO.key_search_r(case.input_nml, 'tref')
         if theta0 is None: 
             theta0 = 1  # hotfix for if flow is not stratified
     elif Ro_f is not None: 
@@ -720,25 +922,21 @@ def compute_vort_budget(sl_dict, self=None, Ro=None, Ro_f=None, lat=45, Fr=None,
         Ro = Ro / (2*np.sin(lat*np.pi/180))  # convert Ro_LES -> Ro_f = G/(f_c*L_c)
 
     # check all required tensors exist:  (may throw KeyError)
-    if 'ui' in sl_dict.keys(): 
-        u_i = sl_dict['ui']
-    else: 
-        u_i = assemble_u_tensor(sl_dict)
+    if not 'ui' in sl_dict.keys(): 
+        assemble_u_tensor(sl_dict, in_place=True)
+    u_i = sl_dict['ui']
     
-    if 'wi' in sl_dict.keys(): 
-        w_i = sl_dict['wi']
-    else: 
-        w_i = assemble_w_tensor(sl_dict)
+    if not 'wi' in sl_dict.keys(): 
+        assemble_w_tensor(sl_dict, in_place=True)
+    w_i = sl_dict['wi']
         
-    if 'uiuj' in sl_dict.keys(): 
-        uiuj = sl_dict('uiuj')
-    else: 
-        uiuj = assemble_rs_tensor(sl_dict)
+    if not 'uiuj' in sl_dict.keys(): 
+        assemble_rs_tensor(sl_dict, in_place=True)
+    uiuj = sl_dict['uiuj']
         
-    if 'tau_ij' in sl_dict.keys(): 
-        tau_ij = sl_dict['tau_ij']
-    else: 
-        tau_ij = assemble_sgs_tensor(sl_dict)
+    if not 'tau_ij' in sl_dict.keys(): 
+        assemble_sgs_tensor(sl_dict, in_place=True)
+    tau_ij = sl_dict['tau_ij']
         
     Tbar = sl_dict['Tbar']
     
@@ -798,9 +996,11 @@ def compute_vort_budget(sl_dict, self=None, Ro=None, Ro_f=None, lat=45, Fr=None,
 
     # add the residual as well
     sl_dict['vort_res'] = np.sum([sl_dict[key] for key in vort_raw.keys()], axis=0)
-#     sl_dict['keys'].append('vort_res')
+#     sl_dict['keys'].append('vort_res')  # also a 4D tensor
+
 
 # ============= polar coordinate functions ================
+
 
 def compute_vort_xrt(sl_dict): 
     """
@@ -826,76 +1026,4 @@ def compute_vort_xrt(sl_dict):
         'ur': sl_dict['vbar']*np.cos(theta) + sl_dict['wbar']*np.sin(theta), 
         'ut' : -sl_dict['vbar']*np.sin(theta) + sl_dict['wbar']*np.cos(theta)
     })
-
-
-# ============= deprecated functions ================
-
-def compute_partials(sl_dict, keys, ret=False): 
-    """
-    === DEPRECATED FUNCTION ===
-    
-    Computes partial derivatives in x, y, and z for 3D scalar field in `keys`
-    
-    Parameters
-    ----------
-    sl_dict (dict) : dictionary from BudgetIO.slice()
-    keys (list) : list of keys to differentiate in x, y, z
-    ret (bool) : if True, returns the computed quantities instead of appending them in the same dictionary
-    
-    Returns
-    -------
-    None (updates sl_dict)
-    """
-    
-    xi = ['dx', 'dy', 'dz']
-    ui = keys  # ui = ['ubar', 'vbar', 'wbar']
-    dxi = [partialx, partialy, partialz]
-    
-    dx = {
-        'dx': sl_dict['x'][1]-sl_dict['x'][0], 
-        'dy': sl_dict['y'][1]-sl_dict['y'][0], 
-        'dz': sl_dict['z'][1]-sl_dict['z'][0]
-    }
-
-    fstring = 'd{:s}d{:s}'
-    xs = ['x', 'y', 'z']
-    us = ui  # us = ['u', 'v', 'w']
-    newdict = {}
-
-    # duidxj = pd.DataFrame(index=ui, columns=xi)
-    for i, u in enumerate(ui): 
-        for j, x in enumerate(xi): 
-            newdict[fstring.format(us[i], xs[j])] = dxi[j](sl_dict[u], dx[x])
-            
-    if ret: 
-        return newdict
-    else: 
-        sl_dict.update({
-            key:newdict[key] for key in newdict.keys()
-        })
-    
-            
-def compute_vort_old(sl_dict): 
-    """
-    === DEPRECATED FUNCTION ===
-    
-    Computes the vorticity vector
-    """
-    # make sure the partials have already been computed
-    partial_keys = ['dubardx', 'dubardy', 'dubardz', 
-                    'dvbardx', 'dvbardy', 'dvbardz', 
-                    'dwbardx', 'dwbardy', 'dwbardz']
-    
-    if not np.all([keycheck in sl_dict.keys() for keycheck in partial_keys]): 
-        compute_partials(sl_dict, ['ubar', 'vbar','wbar'])
-    
-    # update the dictionary with vorticity terms
-    sl_dict.update({
-        'wx': sl_dict['dwbardy'] - sl_dict['dvbardz'], 
-        'wy': sl_dict['dubardz'] - sl_dict['dwbardx'], 
-        'wz': sl_dict['dvbardx'] - sl_dict['dubardy'], 
-    })
-    
-    
-
 
