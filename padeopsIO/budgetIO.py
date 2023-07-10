@@ -711,8 +711,14 @@ class BudgetIO():
         # parse tidx
         if tidx is None: 
             tidx = self.last_tidx
-            
-        # update self.time and self.tidx: 
+        elif tidx not in self.unique_tidx(): 
+            # find the nearest that actually exists
+            tidx_arr = np.array(self.unique_tidx())
+            closest_tidx = tidx_arr[np.argmin(np.abs(tidx_arr-tidx))]
+
+            print("Requested budget tidx={:d} could not be found. Using tidx={:d} instead.".format(tidx, closest_tidx))
+            tidx = closest_tidx 
+
         self.tidx = tidx
         
         info_fname = self.dir_name + '/Run{:02d}_info_t{:06d}.out'.format(self.runid, self.tidx)
