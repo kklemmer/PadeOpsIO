@@ -98,7 +98,7 @@ class BudgetIO():
 
         if ('padeops' in kwargs) and kwargs['padeops']: 
             try: 
-                self._init_padeops(**kwargs)
+                self._init_padeops()
                 self.associate_padeops = True
 
                 if self.verbose: 
@@ -111,7 +111,7 @@ class BudgetIO():
         
         # if padeops wasn't specifically requested, try with npz files: 
         elif 'mat' in kwargs and kwargs['mat']: 
-            self._init_mat(**kwargs)
+            self._init_mat()
             self.associate_mat = True
 
             if self.verbose: 
