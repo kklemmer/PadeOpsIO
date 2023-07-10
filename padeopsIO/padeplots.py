@@ -31,7 +31,7 @@ class PlotIO():
         plt.rcParams.update({'font.size': fontsize})
 
 
-    def plot_xy(io, budget_terms, z, xlim=None, ylim=None, 
+    def plot_xy(self, io, z, xlim=None, ylim=None, budget_terms=None, field_terms=None, 
                 ax=None, xlabel=None, ylabel=None): 
         """
         Plots a slice in the xy-plane. 
@@ -50,31 +50,111 @@ class PlotIO():
         -------
         
         """
-        slices = io.slice(budget_terms, xlim=xlim, ylim=ylim, zlim=z)
 
-        for term in budget_terms: 
+        if budget_terms:
+            slices = io.slice(budget_terms=budget_terms, xlim=xlim, ylim=ylim, zlim=z)
+            terms_list = budget_terms
+        elif field_terms:
+            slices = io.slice(field_terms=field_terms, xlim=xlim, ylim=ylim, zlim=z)
+            terms_list = field_terms
+
+        for term in terms_list: 
             fig, ax = plt.subplots()
             im = ax.imshow(slices[term].T, extent=slices['extent'], origin='lower')
 
-            common_cbar(fig, im, ax, label=PlotIO.keylab[term])
+            common_cbar(fig, im, ax, label=term)
 
             ax.set_xlabel(PlotIO.x_lab)
             ax.set_ylabel(PlotIO.y_lab)
 
             plt.show()
 
+        return ax
+
     
-    def xz_slice(): 
+    def plot_xz(self, io, y, xlim=None, zlim=None, budget_terms=None, field_terms=None, 
+                ax=None, xlabel=None, ylabel=None): 
         """
         Plots a slice in the xz-plane. 
+        
+        If `budget_terms` is a list, then plot_xy will recursively call itself for each term individually
+        and produce figures of each separately. 
+        
+        Arguments
+        ---------
+        io (BudgetIO obj) : BudgetIO object linked to padeops data
+        budget_terms (list or str) : terms to plot
+        y (float) : y-location to pull slices from
+        xlim, zlim : slice bounds, see BudgetIO.slice()
+        
+        Returns 
+        -------
+        
         """
-        pass
 
-    def yz_slice(): 
+        if budget_terms:
+            slices = io.slice(budget_terms=budget_terms, xlim=xlim, ylim=y, zlim=zlim)
+            terms_list = budget_terms
+        elif field_terms:
+            slices = io.slice(field_terms=field_terms, xlim=xlim, ylim=y, zlim=zlim)
+            terms_list = field_terms
+
+        for term in terms_list: 
+            fig, ax = plt.subplots()
+            im = ax.imshow(slices[term].T, extent=slices['extent'], origin='lower')
+
+            common_cbar(fig, im, ax, label=term)
+
+            ax.set_xlabel(PlotIO.x_lab)
+            ax.set_ylabel(PlotIO.z_lab)
+
+            plt.show()
+
+        return ax
+    
+    def plot_yz(self, io, x, ylim=None, zlim=None, budget_terms=None, field_terms=None, 
+                ax=None, xlabel=None, ylabel=None): 
         """
         Plots a slice in the yz-plane. 
+        
+        If `budget_terms` is a list, then plot_xy will recursively call itself for each term individually
+        and produce figures of each separately. 
+        
+        Arguments
+        ---------
+        io (BudgetIO obj) : BudgetIO object linked to padeops data
+        budget_terms (list or str) : terms to plot
+        x (float) : x-location to pull slices from
+        ylim, zlim : slice bounds, see BudgetIO.slice()
+        
+        Returns 
+        -------
+        
         """
+
+        if budget_terms:
+            slices = io.slice(budget_terms=budget_terms, xlim=x, ylim=ylim, zlim=zlim)
+            terms_list = budget_terms
+        elif field_terms:
+            slices = io.slice(field_terms=field_terms, xlim=x, ylim=ylim, zlim=zlim)
+            terms_list = field_terms
+
+        for term in terms_list: 
+            fig, ax = plt.subplots()
+            im = ax.imshow(slices[term].T, extent=slices['extent'], origin='lower')
+
+            common_cbar(fig, im, ax, label=term)
+
+            ax.set_xlabel(PlotIO.y_lab)
+            ax.set_ylabel(PlotIO.z_lab)
+            plt.show()
+
+        return ax
+    
+    def plot_budget(self, io, budget):
+
         pass
+
 
  
 # ----------- additional helper functions ------------

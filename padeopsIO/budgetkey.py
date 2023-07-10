@@ -97,6 +97,7 @@ def get_key():
         'MKE_AD': (2, 7), 
         'MKE_geostrophic': (2, 8), 
         'MKE_coriolis': (2, 9),
+        'MKE_buoyancy': (2,10),
         # BUDGET 3 TERMS: (TKE)
         'TKE_shear_production': (3, 1),
         'TKE_adv': (3, 2), 
@@ -107,7 +108,7 @@ def get_key():
         'TKE_dissipation': (3, 6), 
         'TKE_AD': (3, 7), 
         'TKE_buoyancy': (3, 8), 
-        #'TKE_AD': (3, 9), 
+        'TKE_storage': (3, 9), 
         # BUDGET 4 TERMS: Reynolds stress budgets
         'uu_shear_production':              (4,1),
         'uu_adv':                           (4,2),

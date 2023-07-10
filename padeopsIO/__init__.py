@@ -5,8 +5,8 @@ from PadeOps.
 """
 
 from .budgetIO import *
-#from .padeplots import *
+from .padeplots import *
 from .wake_utils import *
 from .io_utils import *
 from .yawIO import *
-from .deficitIO_new import *
+from .deficitIO import *

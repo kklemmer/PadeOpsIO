@@ -959,7 +959,7 @@ class BudgetIO():
 
         # these lines are almost verbatim from PadeOpsViz.py
         for key in key_subset:
-            budget, term = BudgetIO.key[key]
+            budget, term = self.key[key]
             if budget==4:
                 component = budget4_components[int(np.floor((term-1)/10))]
 
@@ -1016,7 +1016,7 @@ class BudgetIO():
             
                 temp = np.genfromtxt(u_fname, dtype=np.dtype(np.float64))
                 for key in key_subset[budget]:
-                    self.budget_xy[key] = temp[:,BudgetIO.key_xy[key][1]-1]  # reshape into a 3D array
+                    self.budget_xy[key] = temp[:,self.key_xy[key][1]-1]  # reshape into a 3D array
             elif budget == 4:
                 for component in key_subset[budget]:
                     searchstr =  self.dir_name + '/Run{:02d}_budget{:01d}_{:02d}_t{:06d}*.stt'.format(self.runid, budget, component, tidx)
@@ -1104,22 +1104,22 @@ class BudgetIO():
         # parse through terms: they are either 1) valid, 2) missing (but valid keys), or 3) invalid (not in BudgetIO.key)
 
         existing_keys = self.existing_terms(include_wakes=include_wakes)
-        existing_tup = [BudgetIO.key[key] for key in existing_keys]  # corresponding associated tuples (#, #)
+        existing_tup = [self.key[key] for key in existing_keys]  # corresponding associated tuples (#, #)
 
         valid_keys = [t for t in budget_terms if t in existing_keys]
-        missing_keys = [t for t in budget_terms if t not in existing_keys and t in BudgetIO.key]
-        invalid_terms = [t for t in budget_terms if t not in BudgetIO.key and t not in BudgetIO.key.inverse]
+        missing_keys = [t for t in budget_terms if t not in existing_keys and t in self.key]
+        invalid_terms = [t for t in budget_terms if t not in self.key and t not in self.key.inverse]
         
         valid_tup = [tup for tup in budget_terms if tup in existing_tup]  # existing tuples
-        missing_tup = [tup for tup in budget_terms if tup not in existing_tup and tup in BudgetIO.key.inverse]
+        missing_tup = [tup for tup in budget_terms if tup not in existing_tup and tup in self.key.inverse]
         
         # now combine existing valid keys and valid tuples, removing any duplicates
 
-        valid_terms = set(valid_keys + [BudgetIO.key.inverse[tup][0] for tup in valid_tup])  # combine and remove duplicates
-        missing_terms = set(missing_keys + [BudgetIO.key.inverse[tup][0] for tup in missing_tup])
+        valid_terms = set(valid_keys + [self.key.inverse[tup][0] for tup in valid_tup])  # combine and remove duplicates
+        missing_terms = set(missing_keys + [self.key.inverse[tup][0] for tup in missing_tup])
 
         # generate the key
-        key_subset = {key: BudgetIO.key[key] for key in valid_terms}
+        key_subset = {key: self.key[key] for key in valid_terms}
         
         # warn the user if some requested terms did not exist
         if len(key_subset) == 0: 
@@ -1176,19 +1176,19 @@ class BudgetIO():
         # parse through terms: they are either 1) valid, 2) missing (but valid keys), or 3) invalid (not in BudgetIO.key)
 
         existing_keys = self.existing_terms_xy(include_wakes=include_wakes)
-        existing_tup = [BudgetIO.key_xy[key] for key in existing_keys]  # corresponding associated tuples (#, #)
+        existing_tup = [self.key_xy[key] for key in existing_keys]  # corresponding associated tuples (#, #)
         
         valid_keys = [t for t in budget_terms if t in existing_keys]
-        missing_keys = [t for t in budget_terms if t not in existing_keys and t in BudgetIO.key_xy]
-        invalid_terms = [t for t in budget_terms if t not in BudgetIO.key_xy and t not in BudgetIO.key_xy.inverse]
+        missing_keys = [t for t in budget_terms if t not in existing_keys and t in self.key_xy]
+        invalid_terms = [t for t in budget_terms if t not in self.key_xy and t not in self.key_xy.inverse]
 
-        valid_tup = [BudgetIO.key_xy[key] for key in budget_terms if BudgetIO.key_xy[key] in existing_tup]  # existing tuples
-        missing_tup = [BudgetIO.key_xy[key] for key in budget_terms if BudgetIO.key_xy[key] not in existing_tup and BudgetIO.key_xy[key] in BudgetIO.key_xy.inverse]
+        valid_tup = [self.key_xy[key] for key in budget_terms if self.key_xy[key] in existing_tup]  # existing tuples
+        missing_tup = [self.key_xy[key] for key in budget_terms if self.key_xy[key] not in existing_tup and self.key_xy[key] in self.key_xy.inverse]
 
         # now combine existing valid keys and valid tuples, removing any duplicates
 
-        valid_terms = set(valid_keys + [BudgetIO.key_xy.inverse[tup][0] for tup in valid_tup])  # combine and remove duplicates
-        missing_terms = set(missing_keys + [BudgetIO.key_xy.inverse[tup][0] for tup in missing_tup])
+        valid_terms = set(valid_keys + [self.key_xy.inverse[tup][0] for tup in valid_tup])  # combine and remove duplicates
+        missing_terms = set(missing_keys + [self.key_xy.inverse[tup][0] for tup in missing_tup])
 
         # find the budgets
         budgets = []
@@ -1208,8 +1208,8 @@ class BudgetIO():
             tmp_dict = {}
             if budget != 4:
                 for key in valid_terms:
-                    if BudgetIO.key_xy[key][0] == budget and budget != 4:
-                        tmp_dict[key] = BudgetIO.key_xy[key]
+                    if self.key_xy[key][0] == budget and budget != 4:
+                        tmp_dict[key] = self.key_xy[key]
                 key_subset[budget] = tmp_dict
         
             elif budget == 4:
@@ -1219,14 +1219,14 @@ class BudgetIO():
                 tmp_ww_dict = {}
         
                 for key in valid_terms:
-                    if BudgetIO.key_xy[key][0] == 4 and BudgetIO.key_xy[key][1] >= 1 and BudgetIO.key_xy[key][1] <= 9:
-                        tmp_uu_dict[key] = BudgetIO.key_xy[key]
-                    elif BudgetIO.key_xy[key][0] == 4 and BudgetIO.key_xy[key][1] >= 10 and BudgetIO.key_xy[key][1] <= 18:
-                        tmp_uw_dict[key] = [4, BudgetIO.key_xy[key][1] - 9]
-                    elif BudgetIO.key_xy[key][0] == 4 and BudgetIO.key_xy[key][1] >= 19 and BudgetIO.key_xy[key][1] <= 27:
-                        tmp_vw_dict[key] = [4, BudgetIO.key_xy[key][1] - 18]
-                    elif BudgetIO.key_xy[key][0] == 4 and BudgetIO.key_xy[key][1] >= 28 and BudgetIO.key_xy[key][1] <= 36:
-                        tmp_ww_dict[key] = [4, BudgetIO.key_xy[key][1] - 27]
+                    if self.key_xy[key][0] == 4 and self.key_xy[key][1] >= 1 and self.key_xy[key][1] <= 9:
+                        tmp_uu_dict[key] = self.key_xy[key]
+                    elif self.key_xy[key][0] == 4 and self.key_xy[key][1] >= 10 and self.key_xy[key][1] <= 18:
+                        tmp_uw_dict[key] = [4, self.key_xy[key][1] - 9]
+                    elif self.key_xy[key][0] == 4 and self.key_xy[key][1] >= 19 and self.key_xy[key][1] <= 27:
+                        tmp_vw_dict[key] = [4, self.key_xy[key][1] - 18]
+                    elif self.key_xy[key][0] == 4 and self.key_xy[key][1] >= 28 and self.key_xy[key][1] <= 36:
+                        tmp_ww_dict[key] = [4, self.key_xy[key][1] - 27]
                 
                 key_subset[budget][11] = tmp_uu_dict
                 key_subset[budget][13] = tmp_uw_dict
@@ -1605,7 +1605,7 @@ class BudgetIO():
                 ret = loadmat(filename)
                 t_list = [key for key in ret if key[0] != '_']  # ignore `__header__`, etc. 
             
-            budget_list = [BudgetIO.key[t][0] for t in t_list]
+            budget_list = [self.key[t][0] for t in t_list]
 
         if len(budget_list) == 0: 
             warnings.warn('existing_budgets(): No associated budget files found. ')
@@ -1628,6 +1628,7 @@ class BudgetIO():
             Budget 1: momentum
             Budget 2: MKE
             Budget 3: TKE
+            Budget 4: Reynolds stress
             Budget 5: Wake deficit
         include_wakes (bool) : Includes wakes in the returned budget terms if True, default False. 
 
@@ -1691,7 +1692,7 @@ class BudgetIO():
                     tup_list += [((b, term)) for term in wake_budgets if term in terms]
             
             # convert tuples to keys
-            t_list = [BudgetIO.key.inverse[key][0] for key in tup_list]
+            t_list = [self.key.inverse[key][0] for key in tup_list]
         # find budgets matching .npz convention in write_npz()
         else: 
             if self.associate_npz: 
@@ -1710,7 +1711,7 @@ class BudgetIO():
             if budget is None:  # i.e. requesting all budgets
                 return all_terms  # we can stop here without sorting through each budget
             
-            tup_list = [BudgetIO.key[t] for t in all_terms]  # list of associated tuples
+            tup_list = [self.key[t] for t in all_terms]  # list of associated tuples
             t_list = []  # this is the list to be built and returned
 
             for b in budget_list: 
@@ -1766,7 +1767,7 @@ class BudgetIO():
             if budget is None:  # i.e. requesting all budgets
                 return all_terms  # we can stop here without sorting through each budget
             
-            tup_list = [BudgetIO.key[t] for t in all_terms]  # list of associated tuples
+            tup_list = [self.key[t] for t in all_terms]  # list of associated tuples
             t_list = []  # this is the list to be built and returned
 
             for b in budget_list: 
@@ -1797,7 +1798,7 @@ class BudgetIO():
                 tup_list += [((b, term)) for term in set(terms)]  # these are all tuples
                 
             # convert tuples to keys
-            t_list = [BudgetIO.key_xy.inverse[key][0] for key in tup_list]
+            t_list = [self.key_xy.inverse[key][0] for key in tup_list]
         
         else: 
             warnings.warn('existing_terms(): No terms found for budget ' + str(budget))
@@ -2104,7 +2105,7 @@ class BudgetIO():
         else:
             xid, yid, zid = self.get_xids(x=coords[0], y=coords[1], z=coords[2], return_none=True, return_slice=True)
         
-        keys = [key for key in budgetkey.get_key() if budgetkey.get_key()[key][0] == 1]
+        keys = [key for key in self.key if self.key[key][0] == 1]
 
         keys = [key for key in keys if comp_str[0] in key or comp_str[1] in key]
 

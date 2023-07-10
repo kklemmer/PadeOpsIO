@@ -86,6 +86,17 @@ def get_key():
         'delta_v_base_w': (0, 17), 
         'base_v_delta_w': (0, 18), 
         'delta_w_base_w': (0, 19),
+        'delta_tau11'   : (0, 20),
+        'delta_tau12'   : (0, 21),
+        'delta_tau13'   : (0, 22), 
+        'delta_tau22'   : (0, 23), 
+        'delta_tau23'   : (0, 24),
+        'delta_tau33'   : (0, 25),
+        'delta_T'       : (0, 26),
+        'delta_uT'      : (0, 27),
+        'delta_vT'      : (0, 28),
+        'delta_wT'      : (0, 29),
+        'delta_TT'      : (0, 30),
         # BUDGET 1 TERMS: () 
         'xAdv_total': (1,1),
         'xAdv_base_delta_mean': (1, 2),  # x-advection
@@ -120,7 +131,27 @@ def get_key():
         'xCor': (1, 31), # x-coriolis
         'xGeo': (1, 32), # x-geostrophic pressure grad. 
         'yCor': (1, 33), 
-        'yGeo': (1, 34)
+        'yGeo': (1, 34),
+        # BUDGET 2 TERMS: MKE
+        'MKE_TKE_loss' : (2, 1), 
+        'MKE_adv' : (2, 2),      
+        'MKE_turb_transport' : (2, 3),
+        'MKE_p_transport' : (2, 4),     
+        'MKE_SGS_transport' : (2, 5),       
+        'MKE_diss' : (2, 6),
+        'MKE_AD' : (2, 7),
+        'MKE_Geo' : (2, 8),
+        'MKE_Cor' : (2, 9),
+        'MKE_buoyancy' : (2, 10),
+        'MKE_TKE_loss_delta_delta' : (2, 11),
+        'MKE_TKE_loss_base_delta'  : (2, 12),
+        'MKE_TKE_loss_delta_base'  : (2, 13),        
+        'MKE_turb_trans_delta_delta' : (2, 14),
+        'MKE_turb_trans_base_delta'  : (2, 15),
+        'MKE_turb_trans_delta_base'  : (2, 16),
+        'MKE_adv_base_delta' : (2, 17),
+        'MKE_adv_delta_delta' : (2, 18),
+        'MKE_adv_delta_base' : (2, 19)
         }
     
     return bidict(key)
