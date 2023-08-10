@@ -1095,6 +1095,9 @@ class BudgetIO():
 
         elif budget_terms=='all': 
             budget_terms = self.existing_terms(include_wakes=include_wakes)
+
+        elif budget_terms=='1': 
+            budget_terms = [key for key in self.key if self.key[key][0] == 1]
             
         elif budget_terms=='RANS': 
             budget_terms = ['ubar', 'vbar', 'wbar', 
@@ -1571,6 +1574,32 @@ class BudgetIO():
 
         return np.array(times)
 
+
+    def unique_budget_times(self, return_last=False): 
+        """
+        Reads the .out file of each unique time and returns an array of [physical] times corresponding
+        to the time IDs from unique_tidx(). 
+        
+        Returns
+        -------
+        times (arr) : list of times associated with each time ID in unique_tidx()
+        return_false (bool) : if True, only returns the final element in the array. Default: False
+        """
+        
+        times = []; 
+        
+        if return_last:  # save time by only reading the final TIDX
+            tidx = self.unique_budget_tidx(return_last=return_last)
+            fname = os.path.join(self.dir_name, "Run{:02d}_t{:06d}.sth".format(self.runid, tidx))
+            t = np.genfromtxt(fname, dtype=float, delimiter=' ')[0]
+            return t
+        
+        for tidx in self.unique_budget_tidx(return_last=False): 
+            fname = os.path.join(self.dir_name, "Run{:02d}_t{:06d}.sth".format(self.runid, tidx))
+            t = np.genfromtxt(fname, dtype=float, delimiter=' ')[0]
+            times.append(t)
+
+        return np.array(times)
     
     def last_budget_n(self): 
         """
