@@ -467,7 +467,6 @@ class PlotIO():
         ax : axes object
         '''
 
-<<<<<<< Updated upstream
         if budget == "x-mom":
             comp_str = ['DuDt', 'x']
         
