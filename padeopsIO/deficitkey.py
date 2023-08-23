@@ -151,11 +151,100 @@ def get_key():
         'MKE_turb_transport_delta_base': (2,16),
         'MKE_adv_base_delta': (2,17),
         'MKE_adv_delta_delta': (2,18),
-        'MKE_adv_delta_base': (2,19)
+        'MKE_adv_delta_base': (2,19),
+        # BUDGET TERMS 3
+        'TKE_production': (3, 1), 
+        'TKE_adv': (3, 2), 
+        'TKE_turb_transport': (3, 3), 
+        'TKE_p_transport': (3, 4), 
+        'TKE_SGS_transport': (3, 5), 
+        'TKE_dissipation': (3, 6), 
+        'TKE_AD': (3, 7), 
+        'TKE_buoyancy': (3,8),
+        'TKE_prod_delta_delta': (3,9),
+        'TKE_prod_base_delta': (3,10),
+        'TKE_prod_delta_base': (3,11),
+        'TKE_turb_transport_delta_delta': (3,12),
+        'TKE_turb_transport_base_delta': (3,13),
+        'TKE_turb_transport_delta_base': (3,14),
+        'TKE_adv_base_delta' : (3,15),
+        'TKE_adv_delta_delta' : (3,16),
+        'TKE_adv_delta_base' : (3,17),
+        'TKE_adv_delta_base_x' : (3,18),
+        'TKE_adv_delta_base_y' : (3,19),
+        'TKE_adv_delta_base_z' : (3,20)
         }
     
     return bidict(key)
 
+
+def get_budgetIO_comp_key():
+    """
+    Returns a bidirectional hash table between colloquial string values for budget terms in deficit budget and 
+    a tuple-look up ordered (budget #, term #) for the budget terms in budgetIO as defined in e.g. budget_time_avg.F90. 
+    """
+    key = {  # BUDGET 0 TERMS: (1st and second order averages, scalars excluded)
+        'delta_u': (0, 1), 
+        'delta_v': (0, 2), 
+        'delta_w': (0, 3), 
+        'delta_uu': (0, 4), 
+        'delta_uv': (0, 5), 
+        'delta_uw': (0, 6), 
+        'delta_vv': (0, 7), 
+        'delta_vw': (0, 8), 
+        'delta_ww': (0, 9), 
+        'delta_p': (0, 10), 
+        'delta_tau11': (0, 11), 
+        'delta_tau12': (0, 12), 
+        'delta_tau13': (0, 13), 
+        'delta_tau22': (0, 14), 
+        'delta_tau23': (0, 15), 
+        'delta_tau33': (0, 16), 
+        'delta_T': (0, 26), 
+        'delta_uT': (0, 27), 
+        'delta_vT': (0, 28), 
+        'delta_wT': (0, 29), 
+        'delta_TT': (0, 30), 
+        # BUDGET 1 TERMS: (momentum)
+        'xAdv_total': (1, 1),  # x-advection
+        'dpdx': (1, 2),  # x-pressure gradient
+        'xSGS': (1, 3),  # x-sub grid stresses
+        'xAD': (1, 4),   # x-Actuator disk
+        'yAdv_total': (1, 5),  
+        'dpdy': (1, 6), 
+        'ySGS': (1, 7), 
+        'zAdv_total': (1, 8), 
+        'dpdz': (1, 9), 
+        'zSGS': (1, 10),
+        'xCor': (1, 11), # x-coriolis
+        'xGeo': (1, 12), # x-geostrophic pressure grad. 
+        'yCor': (1, 13), 
+        'yGeo': (1, 14), 
+        'yAD': (1, 15), 
+        'zB': (1,16),
+        # BUDGET 2 TERMS: (MKE)  TODO - improve the naming keys
+        'MKE_TKE_loss': (2, 1), 
+        'MKE_adv': (2, 2), 
+        'MKE_turb_transport': (2, 3), 
+        'MKE_p_transport': (2, 4), 
+        'MKE_SGS_transport': (2, 5), 
+        'MKE_dissipation': (2, 6), 
+        'MKE_AD': (2, 7), 
+        'MKE_geostrophic': (2, 8), 
+        'MKE_coriolis': (2, 9),
+        'MKE_buoyancy': (2,10),
+        # BUDGET 3 TERMS: (TKE)
+        'TKE_production': (3, 1),
+        'TKE_adv': (3, 2), 
+        'TKE_turb_transport': (3, 3), 
+        'TKE_p_transport': (3, 4), 
+        'TKE_SGS_transport': (3, 5), 
+        'TKE_dissipation': (3, 6), 
+        'TKE_AD': (3, 7), 
+        'TKE_buoyancy': (3, 8)
+    }
+
+    return bidict(key)
 
 def get_key_xy(): 
     """

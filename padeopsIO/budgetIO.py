@@ -1095,6 +1095,9 @@ class BudgetIO():
 
         elif budget_terms=='all': 
             budget_terms = self.existing_terms(include_wakes=include_wakes)
+
+        elif budget_terms=='1': 
+            budget_terms = [key for key in self.key if self.key[key][0] == 1]
             
         elif budget_terms=='RANS': 
             budget_terms = ['ubar', 'vbar', 'wbar', 
