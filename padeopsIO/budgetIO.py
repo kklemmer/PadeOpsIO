@@ -1352,7 +1352,8 @@ class BudgetIO():
     
     def slice(self, budget_terms=None, 
               field=None, field_terms=None, 
-              sl=None, keys=None, tidx=None, 
+              sl=None, keys=None, terms_not_in_key=None, 
+              tidx=None, 
               xlim=None, ylim=None, zlim=None, 
               overwrite=False, round_extent=False): 
         """
@@ -1422,6 +1423,11 @@ class BudgetIO():
                 slices[term] = np.squeeze(self.budget[term][xid, yid, zid])  
             slices['keys'] = list(key_subset.keys())  # save the terms 
 
+        elif terms_not_in_key is not None:
+            for term in terms_not_in_key:
+                slices[term] = np.squeeze(self.budget[term][xid, yid, zid])  
+            slices['keys'] = list(terms_not_in_key)  # save the terms
+
         elif keys is not None and sl is not None: 
             # slice into slices
             if type(keys) == list: 
@@ -1455,6 +1461,8 @@ class BudgetIO():
             slices['extent'] = np.array(ext)
         
         return slices
+
+  
 
 
     def get_xids(self, **kwargs): 
@@ -2064,7 +2072,95 @@ class BudgetIO():
         See self.read_turb_power() and self._read_turb_file()
         """
         return self.read_turb_property(tidx, 'vvel', **kwargs)
-    
+
+    def rans_calc(self, tidx=None):
+        """
+        Calculates the rans budget terms (splits the advection term)
+        """
+        self.budget['xmom_mean_adv'] = np.zeros([self.nx, self.ny, self.nz])
+        self.budget['ymom_mean_adv'] = np.zeros([self.nx, self.ny, self.nz])
+        self.budget['zmom_mean_adv'] = np.zeros([self.nx, self.ny, self.nz])
+
+        self.budget['xmom_turb'] = np.zeros([self.nx, self.ny, self.nz])
+        self.budget['ymom_turb'] = np.zeros([self.nx, self.ny, self.nz])
+        self.budget['zmom_turb'] = np.zeros([self.nx, self.ny, self.nz])
+
+        tmp_grad = np.transpose(np.gradient(self.budget['ubar'], self.xLine, self.yLine, self.zLine), [1,2,3,0])
+        self.budget['xmom_mean_adv'] = - np.multiply(self.budget['ubar'], tmp_grad[:,:,:,0]) \
+                                    - np.multiply(self.budget['vbar'], tmp_grad[:,:,:,1]) \
+                                    - np.multiply(self.budget['wbar'], tmp_grad[:,:,:,2])
+        self.budget['xmom_turb'] = self.budget['DuDt'] - self.budget['xmom_mean_adv']
+
+        tmp_grad = np.transpose(np.gradient(self.budget['vbar'], self.xLine, self.yLine, self.zLine), [1,2,3,0])
+        self.budget['ymom_mean_adv'] = - np.multiply(self.budget['ubar'], tmp_grad[:,:,:,0]) \
+                                    - np.multiply(self.budget['vbar'], tmp_grad[:,:,:,1]) \
+                                    - np.multiply(self.budget['wbar'], tmp_grad[:,:,:,2])
+        self.budget['ymom_turb'] = self.budget['DuDt'] - self.budget['xmom_mean_adv']
+
+        tmp_grad = np.transpose(np.gradient(self.budget['wbar'], self.xLine, self.yLine, self.zLine), [1,2,3,0])
+        self.budget['zmom_mean_adv'] = - np.multiply(self.budget['ubar'], tmp_grad[:,:,:,0]) \
+                                    - np.multiply(self.budget['vbar'], tmp_grad[:,:,:,1]) \
+                                    - np.multiply(self.budget['wbar'], tmp_grad[:,:,:,2])
+        self.budget['zmom_turb'] = self.budget['DuDt'] - self.budget['xmom_mean_adv']   
+
+    def grad_calc(self, tidx=None, precursor=None, Lref=1):
+        """precursor
+        Calculates the velocity and reynolds stress gradients 
+        """
+
+        self.budget['S11'] = np.zeros([self.nx, self.ny, self.nz])
+        self.budget['S12'] = np.zeros([self.nx, self.ny, self.nz])
+        self.budget['S13'] = np.zeros([self.nx, self.ny, self.nz])
+        self.budget['S22'] = np.zeros([self.nx, self.ny, self.nz])
+        self.budget['S23'] = np.zeros([self.nx, self.ny, self.nz])
+        self.budget['S33'] = np.zeros([self.nx, self.ny, self.nz])
+
+        if 'ubar' in self.key:
+            tmp_grad_u = np.transpose(np.gradient(self.budget['ubar'], self.xLine*Lref, self.yLine*Lref, self.zLine*Lref), [1,2,3,0])
+            tmp_grad_v = np.transpose(np.gradient(self.budget['vbar'], self.xLine*Lref, self.yLine*Lref, self.zLine*Lref), [1,2,3,0])
+            tmp_grad_w = np.transpose(np.gradient(self.budget['wbar'], self.xLine*Lref, self.yLine*Lref, self.zLine*Lref), [1,2,3,0])
+        else:
+            tmp_grad_u = np.transpose(np.gradient(self.budget['delta_u'], self.xLine*Lref, self.yLine*Lref, self.zLine*Lref), [1,2,3,0])
+            tmp_grad_v = np.transpose(np.gradient(self.budget['delta_v'], self.xLine*Lref, self.yLine*Lref, self.zLine*Lref), [1,2,3,0])
+            tmp_grad_w = np.transpose(np.gradient(self.budget['delta_w'], self.xLine*Lref, self.yLine*Lref, self.zLine*Lref), [1,2,3,0])
+
+        self.budget['S11'] = tmp_grad_u[:,:,:,0]
+        self.budget['S12'] = 0.5*(tmp_grad_u[:,:,:,1] + tmp_grad_v[:,:,:,0])
+        self.budget['S13'] = 0.5*(tmp_grad_u[:,:,:,2] + tmp_grad_w[:,:,:,0]) 
+
+        self.budget['S22'] = tmp_grad_v[:,:,:,1]
+        self.budget['S23'] = 0.5*(tmp_grad_v[:,:,:,2] + tmp_grad_w[:,:,:,1])
+        self.budget['S33'] = tmp_grad_w[:,:,:,2]
+
+        if 'delta_u_base_u' in self.key:
+            self.budget['base_delta_S11'] = np.zeros([self.nx, self.ny, self.nz])
+            self.budget['base_delta_S12'] = np.zeros([self.nx, self.ny, self.nz])
+            self.budget['base_delta_S13'] = np.zeros([self.nx, self.ny, self.nz])
+            self.budget['base_delta_S22'] = np.zeros([self.nx, self.ny, self.nz])
+            self.budget['base_delta_S21'] = np.zeros([self.nx, self.ny, self.nz])
+            self.budget['base_delta_S23'] = np.zeros([self.nx, self.ny, self.nz])
+            self.budget['base_delta_S31'] = np.zeros([self.nx, self.ny, self.nz])
+            self.budget['base_delta_S32'] = np.zeros([self.nx, self.ny, self.nz])
+            self.budget['base_delta_S33'] = np.zeros([self.nx, self.ny, self.nz])
+
+            tmp_grad_delta_u = np.transpose(np.gradient(self.budget['delta_u'], self.xLine*Lref, self.yLine*Lref, self.zLine*Lref), [1,2,3,0])
+            tmp_grad_delta_v = np.transpose(np.gradient(self.budget['delta_v'], self.xLine*Lref, self.yLine*Lref, self.zLine*Lref), [1,2,3,0])
+            tmp_grad_delta_w = np.transpose(np.gradient(self.budget['delta_w'], self.xLine*Lref, self.yLine*Lref, self.zLine*Lref), [1,2,3,0])
+
+            tmp_grad_base_u = np.transpose(np.gradient(precursor.budget['ubar'], precursor.xLine*Lref, precursor.yLine*Lref, precursor.zLine*Lref), [1,2,3,0])
+            tmp_grad_base_v = np.transpose(np.gradient(precursor.budget['vbar'], precursor.xLine*Lref, precursor.yLine*Lref, precursor.zLine*Lref), [1,2,3,0])
+            tmp_grad_base_w = np.transpose(np.gradient(precursor.budget['wbar'], precursor.xLine*Lref, precursor.yLine*Lref, precursor.zLine*Lref), [1,2,3,0])
+
+            self.budget['base_delta_S11'] = 0.5*(tmp_grad_base_u[:,:,:,0] + tmp_grad_delta_u[:,:,:,0])
+            self.budget['base_delta_S12'] = 0.5*(tmp_grad_base_u[:,:,:,1] + tmp_grad_delta_v[:,:,:,0])
+            self.budget['base_delta_S13'] = 0.5*(tmp_grad_base_u[:,:,:,2] + tmp_grad_delta_w[:,:,:,0])
+            self.budget['base_delta_S21'] = 0.5*(tmp_grad_base_v[:,:,:,0] + tmp_grad_delta_u[:,:,:,1])
+            self.budget['base_delta_S22'] = 0.5*(tmp_grad_base_v[:,:,:,1] + tmp_grad_delta_v[:,:,:,1])
+            self.budget['base_delta_S23'] = 0.5*(tmp_grad_base_v[:,:,:,2] + tmp_grad_delta_w[:,:,:,1])
+            self.budget['base_delta_S31'] = 0.5*(tmp_grad_base_w[:,:,:,0] + tmp_grad_delta_u[:,:,:,2])
+            self.budget['base_delta_S32'] = 0.5*(tmp_grad_base_w[:,:,:,1] + tmp_grad_delta_v[:,:,:,2])
+            self.budget['base_delta_S33'] = 0.5*(tmp_grad_base_w[:,:,:,2] + tmp_grad_delta_w[:,:,:,2])
+        return
     #### Functions for plotting budgets ####
 
     # production      - blues

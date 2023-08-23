@@ -6,6 +6,8 @@ import sys
 import padeopsIO.budgetkey as budgetkey
 import padeopsIO.deficitkey as deficitkey
 
+import padeopsIO as pio
+
 
 class PlotIO(): 
     """
@@ -25,12 +27,15 @@ class PlotIO():
     # add other constants here? Note: these are mutable by the user
 
     momentum_budget_colors = {"Adv_total": "tab:blue", 
+                              "Dt": "tab:blue",
+                              "adv_mean": "tab:blue",
                               "dpd": "tab:orange",
                               "SGS": "tab:green",
                               "AD": "tab:red",
                               "Cor": "tab:purple",
                               "Geo": "tab:brown",
-                              "B": "tab:gray"}
+                              "B": "tab:gray",
+                              "turb": "tab:pink"}
 
     budget_colors = {"shear_production": "tab:blue",
                      "buoyancy" : "tab:gray",
@@ -52,7 +57,7 @@ class PlotIO():
 
 
     def plot_xy(self, io, z, xlim=None, ylim=None, budget_terms=None, field_terms=None, 
-                ax=None, xlabel=None, ylabel=None, tidx=None, xscale=None,**kwargs): 
+                terms_not_in_key=None, ax=None, xlabel=None, ylabel=None, tidx=None, xscale=None,**kwargs): 
         """
         Plots a slice in the xy-plane. 
         
@@ -86,6 +91,9 @@ class PlotIO():
         elif field_terms:
             slices = io.slice(field_terms=field_terms, xlim=xlim, ylim=ylim, zlim=z, tidx=tidx)
             terms_list = field_terms
+        elif terms_not_in_key:
+            slices = io.slice(terms_not_in_key=terms_not_in_key, xlim=xlim, ylim=ylim, zlim=z, tidx=tidx)
+            terms_list = terms_not_in_key
 
         if not xscale:
             xscale=1
@@ -105,7 +113,7 @@ class PlotIO():
 
     
     def plot_xz(self, io, y, xlim=None, zlim=None, budget_terms=None, field_terms=None, 
-                ax=None, xlabel=None, ylabel=None, tidx=None, xscale=None, **kwargs): 
+                terms_not_in_key=None, ax=None, xlabel=None, ylabel=None, tidx=None, xscale=None, **kwargs): 
         """
         Plots a slice in the xz-plane. 
         
@@ -140,6 +148,9 @@ class PlotIO():
         elif field_terms:
             slices = io.slice(field_terms=field_terms, xlim=xlim, ylim=y, zlim=zlim, tidx=tidx)
             terms_list = field_terms
+        elif terms_not_in_key:
+            slices = io.slice(terms_not_in_key=terms_not_in_key, xlim=xlim, ylim=y, zlim=zlim, tidx=tidx)
+            terms_list = terms_not_in_key
 
         if not xscale:
             xscale=1
@@ -159,8 +170,9 @@ class PlotIO():
         return ax
     
 
+
     def plot_yz(self, io, x, ylim=None, zlim=None, budget_terms=None, field_terms=None, 
-                ax=None, xlabel=None, ylabel=None, tidx=None, xscale=None,**kwargs): 
+                terms_not_in_key=None, ax=None, xlabel=None, ylabel=None, tidx=None, xscale=None,**kwargs): 
         """
         Plots a slice in the yz-plane. 
         
@@ -195,6 +207,9 @@ class PlotIO():
         elif field_terms:
             slices = io.slice(field_terms=field_terms, xlim=x, ylim=ylim, zlim=zlim, tidx=tidx)
             terms_list = field_terms
+        elif terms_not_in_key:
+            slices = io.slice(terms_not_in_key=terms_not_in_key, xlim=x, ylim=ylim, zlim=zlim, tidx=tidx)
+            terms_list = terms_not_in_key
 
         if not xscale:
             xscale=1
@@ -231,38 +246,7 @@ class PlotIO():
         """
 
         if not isinstance(terms, list):
-            if terms == "x-mom":
-                comp_str = ['DuDt', 'x']
-            
-                keys = [key for key in io.key if io.key[key][0] == 1]
-                keys_tmp = [key for key in keys if comp_str[0] in key or comp_str[1] in key]
-                terms = [key for key in keys_tmp if "fluc" not in key and "mean" not in key]
-
-                print(terms)
-
-
-            elif terms == "y-mom":
-                comp_str = ['DvDt', 'y']
-            
-                keys = [key for key in io.key if io.key[key][0] == 1]
-                keys_tmp = [key for key in keys if comp_str[0] in key or comp_str[1] in key]
-                terms = [key for key in keys_tmp if "fluc" not in key and "mean" not in key]
-
-            elif terms == "z-mom":
-                comp_str = ['DwDt', 'z']
-            
-                keys = [key for key in io.key if io.key[key][0] == 1]
-                keys_tmp = [key for key in keys if comp_str[0] in key or comp_str[1] in key]
-                terms = [key for key in keys_tmp if "fluc" not in key and "mean" not in key]  
-
-            elif terms == "MKE":
-                terms = [key for key in io.key if io.key[key][0] == 2 and io.key[key][1] <= 10]
-
-            elif terms == "TKE":
-                terms = [key for key in io.key if io.key[key][0] == 3 and io.key[key][1] <= 8]
-            else:
-                print("Please enter a valid budget type. Options include: x-mom, y-mom, z-mom, and MKE.")
-                return
+            keys, colors = self.get_terms(io, terms)
             
         if not color_list:
             color_list = plt.rcParams['axes.prop_cycle'].by_key()['color']     
@@ -329,39 +313,8 @@ class PlotIO():
         # assumes all the terms are the same for now
         io = io_list[0]
         if not isinstance(terms, list):
-            if terms == "x-mom":
-                comp_str = ['DuDt', 'x']
-            
-                keys = [key for key in io.key if io.key[key][0] == 1]
-                keys_tmp = [key for key in keys if comp_str[0] in key or comp_str[1] in key]
-                terms = [key for key in keys_tmp if "fluc" not in key and "mean" not in key]
+            keys, colors = self.get_terms(io, terms)
 
-                print(terms)
-
-
-            elif terms == "y-mom":
-                comp_str = ['DvDt', 'y']
-            
-                keys = [key for key in io.key if io.key[key][0] == 1]
-                keys_tmp = [key for key in keys if comp_str[0] in key or comp_str[1] in key]
-                terms = [key for key in keys_tmp if "fluc" not in key and "mean" not in key]
-
-            elif terms == "z-mom":
-                comp_str = ['DwDt', 'z']
-            
-                keys = [key for key in io.key if io.key[key][0] == 1]
-                keys_tmp = [key for key in keys if comp_str[0] in key or comp_str[1] in key]
-                terms = [key for key in keys_tmp if "fluc" not in key and "mean" not in key]  
-
-            elif terms == "MKE":
-                terms = [key for key in io.key if io.key[key][0] == 2 and io.key[key][1] <= 10]
-
-            elif terms == "TKE":
-                terms = [key for key in io.key if io.key[key][0] == 3 and io.key[key][1] <= 8]
-            else:
-                print("Please enter a valid budget type. Options include: x-mom, y-mom, z-mom, and MKE.")
-                return
-            
         if not color_list:
             color_list = plt.rcParams['axes.prop_cycle'].by_key()['color']     
             print(len(color_list))
@@ -439,40 +392,7 @@ class PlotIO():
         residual_b = 0
         for io in io_list:
             if not isinstance(terms, list):
-                if terms == "x-mom":
-                    comp_str = ['DuDt', 'x']
-                
-                    keys = [key for key in io.key if io.key[key][0] == 1]
-                    keys_tmp = [key for key in keys if comp_str[0] in key or comp_str[1] in key]
-                    terms = [key for key in keys_tmp if "fluc" not in key and "mean" not in key]
-
-                    print(terms)
-
-
-                elif terms == "y-mom":
-                    comp_str = ['DvDt', 'y']
-                
-                    keys = [key for key in io.key if io.key[key][0] == 1]
-                    keys_tmp = [key for key in keys if comp_str[0] in key or comp_str[1] in key]
-                    terms = [key for key in keys_tmp if "fluc" not in key and "mean" not in key]
-
-                elif terms == "z-mom":
-                    comp_str = ['DwDt', 'z']
-                
-                    keys = [key for key in io.key if io.key[key][0] == 1]
-                    keys_tmp = [key for key in keys if comp_str[0] in key or comp_str[1] in key]
-                    terms = [key for key in keys_tmp if "fluc" not in key and "mean" not in key]  
-
-                elif terms == "MKE":
-                    terms = [key for key in io.key if io.key[key][0] == 2 and io.key[key][1] <= 10]
-
-                elif terms == "TKE":
-                    terms = [key for key in io.key if io.key[key][0] == 3 and io.key[key][1] <= 8]
-                else:
-                    print("Please enter a valid budget type. Options include: x-mom, y-mom, z-mom, and MKE.")
-                    return
-
-                print(io)
+                keys, colors = self.get_terms(io, terms)
 
             xid, yid, zid = io.get_xids(x=coords[0], y=coords[1], z=coords[2], return_none=True, return_slice=True)
             residual = 0
@@ -533,7 +453,7 @@ class PlotIO():
 
         return fig, ax
 
-    def plot_budget(self, io, budget, coords=None, fig=None, ax=None, alpha=1, zScale=1):
+    def plot_budget(self, io, budget, coords=None, fig=None, ax=None, alpha=1, zScale=1, nonDim=1):
         '''
         Plots the MKE budget
         
@@ -547,6 +467,7 @@ class PlotIO():
         ax : axes object
         '''
 
+<<<<<<< Updated upstream
         if budget == "x-mom":
             comp_str = ['DuDt', 'x']
         
@@ -615,6 +536,8 @@ class PlotIO():
         else:
             print("Please enter a valid budget type. Options include: x-mom, y-mom, z-mom, and MKE.")
             return
+
+        keys, colors = self.get_terms(io, budget)
         
         if not coords:
             xid = (slice(0, len(io.xLine)), )
@@ -628,39 +551,14 @@ class PlotIO():
 
         residual = 0
         
-        if "RANS" in budget:
-            turb_keys = [key for key in keys if 'fluc' in key]
-            mean_adv_keys = [key for key in keys if 'Adv_delta_delta_mean' in key or 'Adv_base_delta_mean' in key]
-            mean_base_key = [key for key in keys if 'Adv_delta_base_mean' in key][0]
-
-            sum = 0
-            for key in mean_adv_keys:
-                sum += io.budget[key]
-                keys.remove(key)
-            ax.plot(np.mean(np.mean(sum[xid,yid,zid], axis=1), axis=0), io.zLine, label=comp_str[0], alpha=alpha)
-            residual += sum
-
-            ax.plot(np.mean(np.mean(io.budget[mean_base_key][xid,yid,zid], axis=1), axis=0), io.zLine, label=comp_str[1] + 'delta_base', alpha=alpha)
-            residual += io.budget[mean_base_key]
-            keys.remove(mean_base_key) 
-            keys.remove(comp_str[1] + 'Adv_total')
-
-            sum = 0
-            for key in turb_keys:
-                sum += io.budget[key]
-                keys.remove(key)
-            ax.plot(np.mean(np.mean(sum[xid,yid,zid], axis=1), axis=0), io.zLine*zScale, label=comp_str[1] + 'turb_tr', alpha=alpha)
-
-            residual += sum
-
         for key in keys:
             # color = [color_value for color_key, color_value in colors if color_key in key]
 
-            ax.plot(np.mean(np.mean(io.budget[key][xid,yid,zid], axis=1), axis=0), io.zLine*zScale, label=key, alpha=alpha)
+            ax.plot(np.mean(io.budget[key][xid,yid,zid], axis=(0,1))*nonDim, io.zLine*zScale, label=key, alpha=alpha)
 
             residual += io.budget[key]
 
-        ax.plot(np.mean(np.mean(residual[xid,yid,zid], axis=1), axis=0), 
+        ax.plot(np.mean(np.mean(residual[xid,yid,zid], axis=1), axis=0)*nonDim, 
             io.zLine*zScale, label='Residual', linestyle='--', color='black',alpha=alpha)
 
         ax.set_ylabel('$z/D$')
@@ -712,6 +610,78 @@ class PlotIO():
             im = plt.imread(dir+str(i*interval + start)+'.png')
             plt.imshow(im)
             plt.axis('off')
+
+    def get_terms(self, io, budget):
+        """
+        Returns the terms for the selected budget
+        """
+
+        if 'x' in budget:
+            comp_str = ['DuDt', 'x']
+
+            colors = self.momentum_budget_colors
+
+
+        elif 'y' in budget:
+            comp_str = ['DvDt', 'y']
+
+            colors = self.momentum_budget_colors
+
+        elif 'z' in budget:
+            comp_str = ['DwDt', 'z']
+
+            colors = self.momentum_budget_colors
+
+        elif budget == "MKE":
+            keys = [key for key in io.key if io.key[key][0] == 2 and io.key[key][1] <= 10]
+            if isinstance(io, pio.DeficitIO):
+                keys.append('MKE_adv_delta_base')
+
+            colors = self.budget_colors
+
+        elif budget == "TKE":
+            keys = [key for key in io.key if io.key[key][0] == 3 and io.key[key][1] <= 8]
+            colors = self.budget_colors
+        else:
+            print("Please enter a valid budget type. Options include: x-mom, y-mom, z-mom, and MKE.")
+            return
+
+        if 'mom' in budget:
+            keys = [key for key in io.key if io.key[key][0] == 1]
+            keys_tmp = [key for key in keys if comp_str[0] in key or comp_str[1] in key]
+            keys = [key for key in keys_tmp if "fluc" not in key and "mean" not in key]  
+
+        if 'RANS' in budget:
+            # gather all the keys in budget 1 for x
+            keys = [key for key in io.key if io.key[key][0] == 1]
+            keys = [key for key in keys if comp_str[1] in key]
+
+            # check for RANS terms for BudgetIO object
+            # if not there, run rans_calc()
+            if isinstance(io, pio.DeficitIO):
+                keys.remove(comp_str[1] + 'Adv_total')
+                if comp_str[1] + 'mom_turb' not in io.budget:
+                    io.budget[comp_str[1] + 'mom_turb'] = io.budget[comp_str[1] + 'Adv_base_delta_fluc'] \
+                                                + io.budget[comp_str[1] + 'Adv_delta_delta_fluc'] \
+                                                + io.budget[comp_str[1] + 'Adv_delta_base_fluc']
+                    keys.remove(comp_str[1] + 'Adv_base_delta_fluc')
+                    keys.remove(comp_str[1] + 'Adv_delta_delta_fluc')
+                    keys.remove(comp_str[1]+ 'Adv_delta_base_fluc')
+
+                if comp_str[1] + 'mom_mean_adv' not in io.budget:
+                    io.budget[comp_str[1]+ 'mom_mean_adv'] = io.budget[comp_str[1] + 'Adv_base_delta_mean'] \
+                                + io.budget[comp_str[1] + 'Adv_delta_delta_mean']
+                    keys.remove(comp_str[1] + 'Adv_base_delta_fluc')
+                    keys.remove(comp_str[1] + 'Adv_delta_delta_fluc')
+            elif isinstance(io, pio.BudgetIO):
+                if comp_str[1] + 'mom_turb' not in io.budget or comp_str[1] + 'mom_mean_adv' not in io.budget:
+                    io.rans_calc()
+                
+                keys.append(comp_str[1] + 'mom_mean_adv')
+                keys.append(comp_str[1] + 'mom_turb')
+
+
+        return keys, colors
     
 # ----------- additional helper functions ------------
 
