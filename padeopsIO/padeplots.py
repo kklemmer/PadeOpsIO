@@ -52,7 +52,7 @@ class PlotIO():
 
 
     def plot_xy(self, io, z, xlim=None, ylim=None, budget_terms=None, field_terms=None, 
-                ax=None, xlabel=None, ylabel=None): 
+                ax=None, xlabel=None, ylabel=None, tidx=None, xscale=None,**kwargs): 
         """
         Plots a slice in the xy-plane. 
         
@@ -71,16 +71,28 @@ class PlotIO():
         
         """
 
+        if not tidx:
+            try:
+                tidx = io.last_tidx
+            except:
+                print(" ")
+            try:
+                tidx = io.last_budget_tidx
+            except:
+                print(" ")
         if budget_terms:
-            slices = io.slice(budget_terms=budget_terms, xlim=xlim, ylim=ylim, zlim=z)
+            slices = io.slice(budget_terms=budget_terms, xlim=xlim, ylim=ylim, zlim=z, tidx=tidx)
             terms_list = budget_terms
         elif field_terms:
-            slices = io.slice(field_terms=field_terms, xlim=xlim, ylim=ylim, zlim=z)
+            slices = io.slice(field_terms=field_terms, xlim=xlim, ylim=ylim, zlim=z, tidx=tidx)
             terms_list = field_terms
+
+        if not xscale:
+            xscale=1
 
         for term in terms_list: 
             fig, ax = plt.subplots()
-            im = ax.imshow(slices[term].T, extent=slices['extent'], origin='lower')
+            im = ax.imshow(slices[term].T, extent=slices['extent']*xscale, origin='lower',**kwargs)
 
             common_cbar(fig, im, ax, label=term)
 
@@ -93,7 +105,7 @@ class PlotIO():
 
     
     def plot_xz(self, io, y, xlim=None, zlim=None, budget_terms=None, field_terms=None, 
-                ax=None, xlabel=None, ylabel=None): 
+                ax=None, xlabel=None, ylabel=None, tidx=None, xscale=None, **kwargs): 
         """
         Plots a slice in the xz-plane. 
         
@@ -111,17 +123,30 @@ class PlotIO():
         -------
         
         """
+        
+        if not tidx:
+            try:
+                tidx = io.last_tidx
+            except:
+                print(" ")
+            try:
+                tidx = io.last_budget_tidx
+            except:
+                print(" ")
 
         if budget_terms:
-            slices = io.slice(budget_terms=budget_terms, xlim=xlim, ylim=y, zlim=zlim)
+            slices = io.slice(budget_terms=budget_terms, xlim=xlim, ylim=y, zlim=zlim, tidx=tidx)
             terms_list = budget_terms
         elif field_terms:
-            slices = io.slice(field_terms=field_terms, xlim=xlim, ylim=y, zlim=zlim)
+            slices = io.slice(field_terms=field_terms, xlim=xlim, ylim=y, zlim=zlim, tidx=tidx)
             terms_list = field_terms
+
+        if not xscale:
+            xscale=1
 
         for term in terms_list: 
             fig, ax = plt.subplots()
-            im = ax.imshow(slices[term].T, extent=slices['extent'], origin='lower')
+            im = ax.imshow(slices[term].T, extent=slices['extent']*xscale, origin='lower', **kwargs)
 
             common_cbar(fig, im, ax, label=term)
 
@@ -133,7 +158,7 @@ class PlotIO():
         return ax
     
     def plot_yz(self, io, x, ylim=None, zlim=None, budget_terms=None, field_terms=None, 
-                ax=None, xlabel=None, ylabel=None): 
+                ax=None, xlabel=None, ylabel=None, tidx=None, xscale=None,**kwargs): 
         """
         Plots a slice in the yz-plane. 
         
@@ -152,16 +177,29 @@ class PlotIO():
         
         """
 
+
+        if not tidx:
+            try:
+                tidx = io.last_tidx
+            except:
+                print(" ")
+            try:
+                tidx = io.last_budget_tidx
+            except:
+                print(" ")
         if budget_terms:
-            slices = io.slice(budget_terms=budget_terms, xlim=x, ylim=ylim, zlim=zlim)
+            slices = io.slice(budget_terms=budget_terms, xlim=x, ylim=ylim, zlim=zlim, tidx=tidx)
             terms_list = budget_terms
         elif field_terms:
-            slices = io.slice(field_terms=field_terms, xlim=x, ylim=ylim, zlim=zlim)
+            slices = io.slice(field_terms=field_terms, xlim=x, ylim=ylim, zlim=zlim, tidx=tidx)
             terms_list = field_terms
+
+        if not xscale:
+            xscale=1
 
         for term in terms_list: 
             fig, ax = plt.subplots()
-            im = ax.imshow(slices[term].T, extent=slices['extent'], origin='lower')
+            im = ax.imshow(slices[term].T, extent=slices['extent']*xscale, origin='lower', **kwargs)
 
             common_cbar(fig, im, ax, label=term)
 
@@ -170,10 +208,6 @@ class PlotIO():
             plt.show()
 
         return ax
-    
-    def plot_budget(self, io, budget):
-
-        pass
 
     def bar_plot(self, io, terms, coords, color_list=None, alpha_list=None, labels=None, compute_residual=True):
         """
@@ -200,6 +234,8 @@ class PlotIO():
                 keys_tmp = [key for key in keys if comp_str[0] in key or comp_str[1] in key]
                 terms = [key for key in keys_tmp if "fluc" not in key and "mean" not in key]
 
+                print(terms)
+
 
             elif terms == "y-mom":
                 comp_str = ['DvDt', 'y']
@@ -217,12 +253,13 @@ class PlotIO():
 
             elif terms == "MKE":
                 terms = [key for key in io.key if io.key[key][0] == 2 and io.key[key][1] <= 10]
+
+            elif terms == "TKE":
+                terms = [key for key in io.key if io.key[key][0] == 3 and io.key[key][1] <= 8]
             else:
                 print("Please enter a valid budget type. Options include: x-mom, y-mom, z-mom, and MKE.")
                 return
-        
-        print(terms)
-
+            
         if not color_list:
             color_list = plt.rcParams['axes.prop_cycle'].by_key()['color']     
             print(len(color_list))
@@ -233,16 +270,7 @@ class PlotIO():
         xid, yid, zid = io.get_xids(x=coords[0], y=coords[1], z=coords[2], return_none=True, return_slice=True)
         residual = 0
 
-        print(xid)
-        print(yid)
-        print(zid)
-
-        plt.rcParams.update({
-            "text.usetex": False,
-            "font.family": "Helvetica"
-        })
-        
-        fig, ax = plt.subplots(figsize=(12,10))
+        fig, ax = plt.subplots()
         
         i = 0
         for term in terms:
@@ -255,20 +283,23 @@ class PlotIO():
             
             i+=1
              
-        print(i)
         if compute_residual:   
             ax.bar(len(terms), np.trapz(np.trapz(np.trapz(residual[xid,yid,zid], 
                                             x=io.zLine[zid], axis=2),
                                             x=io.yLine[yid], axis=1),
                                             x=io.xLine[xid], axis=0), linewidth=0.5, color='tab:gray')
             if not labels:
-                terms.append('Res')
-                labels = terms
+                labels = terms.copy()
+                labels.append('Res')
+                
         
             ax.set_xticks(range(len(terms)+1))
         else:
             ax.set_xticks(range(len(terms)))      
 
+
+        print(terms)
+        print(range(len(terms)+1))
         
         ax.set_xticklabels(labels)
 
@@ -295,6 +326,8 @@ class PlotIO():
             keys_tmp = [key for key in keys if comp_str[0] in key or comp_str[1] in key]
             keys = [key for key in keys_tmp if "fluc" not in key and "mean" not in key]
 
+            colors = self.momentum_budget_colors
+
 
         elif budget == "y-mom":
             comp_str = ['DvDt', 'y']
@@ -303,12 +336,16 @@ class PlotIO():
             keys_tmp = [key for key in keys if comp_str[0] in key or comp_str[1] in key]
             keys = [key for key in keys_tmp if "fluc" not in key and "mean" not in key]
 
+            colors = self.momentum_budget_colors
+
         elif budget == "z-mom":
             comp_str = ['DwDt', 'z']
         
             keys = [key for key in io.key if io.key[key][0] == 1]
             keys_tmp = [key for key in keys if comp_str[0] in key or comp_str[1] in key]
             keys = [key for key in keys_tmp if "fluc" not in key and "mean" not in key]  
+
+            colors = self.momentum_budget_colors
 
         elif budget == "MKE":
             keys = [key for key in io.key if io.key[key][0] == 2 and io.key[key][1] <= 10]
@@ -319,8 +356,8 @@ class PlotIO():
                 print("")
 
         elif budget == "TKE":
-            keys = [key for key in io.key if io.key[key][0] == 3 and io.key[key][1] <= 10]
-
+            keys = [key for key in io.key if io.key[key][0] == 3 and io.key[key][1] <= 8]
+            colors = self.budget_colors
         else:
             print("Please enter a valid budget type. Options include: x-mom, y-mom, z-mom, and MKE.")
             return
@@ -332,28 +369,25 @@ class PlotIO():
         else:
             xid, yid, zid = io.get_xids(x=coords[0], y=coords[1], z=coords[2], return_none=True, return_slice=True)
 
-        print(xid)
-        print(yid)
-        print(zid)
-
-
         if not fig and not ax:
             fig, ax = plt.subplots()
 
         residual = 0
         
         for key in keys:
+            # color = [color_value for color_key, color_value in colors if color_key in key]
+
             ax.plot(np.mean(np.mean(io.budget[key][xid,yid,zid], axis=1), axis=0), io.zLine, label=key, alpha=alpha)
             residual += io.budget[key]
 
         ax.plot(np.mean(np.mean(residual[xid,yid,zid], axis=1), axis=0), 
             io.zLine, label='Residual', linestyle='--', color='black',alpha=alpha)
 
-        ax.set_ylabel('$z/L$')
+        ax.set_ylabel('$z/D$')
             
         return fig, ax
 
-    def plot_var_in_time(self, io, variables, coords=None, increment=1):
+    def plot_var_in_time(self, io, variables, coords=None, increment=1, timeDim=1000, zScale=1):
         
         print(variables)
 
@@ -368,18 +402,21 @@ class PlotIO():
 
         colors = plt.cm.rainbow(np.linspace(0, 1, len(tidxs)))
 
-        for i in range(0,len(tidxs),1):
+        for i in range(0,len(tidxs),increment):
             io.read_fields(tidx=tidxs[i])
-
-            ax[0].plot(np.mean(io.field[variables[0]], axis=(0,1)), io.zLine, label = np.round(times[i]*240/3600,1), 
-                color=colors[i])
-
-            for k in range(1,len(variables),increment):
-                ax[k].plot(np.mean(io.field[variables[k]], axis=(0,1)), io.zLine, color=colors[i])
             
-        fig.legend(title = 'Hour')
+            if len(variables) == 1:
+                ax.plot(np.mean(io.field[variables[0]], axis=(0,1)), io.zLine*zScale, label = np.round(times[i]*timeDim/3600,1), 
+                           color=colors[i])
+            else:
+                ax[0].plot(np.mean(io.field[variables[0]], axis=(0,1)), io.zLine*zScale, label = np.round(times[i]*timeDim/3600,1), 
+                           color=colors[i])
+                for k in range(1,len(variables),increment):
+                    ax[k].plot(np.mean(io.field[variables[k]], axis=(0,1)), io.zLine*zScale, color=colors[i])
+            
 
-        # [ax[i].set_ylim([0,2]) for i in range(2)]
+        sm = plt.cm.ScalarMappable(cmap='rainbow', norm=plt.Normalize(vmin=times[0]*timeDim/3600, vmax=times[-1]*timeDim/3600))
+        plt.colorbar(sm, label = 'Hour')
 
         ax[0].set_ylabel('z/D')
 
