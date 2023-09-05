@@ -10,3 +10,4 @@ from .wake_utils import *
 from .io_utils import *
 from .yawIO import *
 from .deficitIO import *
+from .eddy_visc import *

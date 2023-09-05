@@ -57,7 +57,7 @@ class PlotIO():
 
 
     def plot_xy(self, io, z, xlim=None, ylim=None, budget_terms=None, field_terms=None, 
-                terms_not_in_key=None, ax=None, xlabel=None, ylabel=None, tidx=None, xscale=None,**kwargs): 
+                terms_not_in_key=None, ax=None, xlabel=None, ylabel=None, tidx=None, xscale=None, fig=None, cbar=True, nonDim=1, **kwargs): 
         """
         Plots a slice in the xy-plane. 
         
@@ -98,11 +98,14 @@ class PlotIO():
         if not xscale:
             xscale=1
 
-        for term in terms_list: 
-            fig, ax = plt.subplots()
-            im = ax.imshow(slices[term].T, extent=slices['extent']*xscale, origin='lower',**kwargs)
+        for term in terms_list:
+            if not ax:
+                fig, ax = plt.subplots()
+        
+            im = ax.imshow(nonDim*slices[term].T, extent=slices['extent']*xscale, origin='lower',**kwargs)
 
-            common_cbar(fig, im, ax, label=term)
+            if cbar:
+                common_cbar(fig, im, ax, label=term)
 
             ax.set_xlabel(PlotIO.x_lab)
             ax.set_ylabel(PlotIO.y_lab)
@@ -113,7 +116,7 @@ class PlotIO():
 
     
     def plot_xz(self, io, y, xlim=None, zlim=None, budget_terms=None, field_terms=None, 
-                terms_not_in_key=None, ax=None, xlabel=None, ylabel=None, tidx=None, xscale=None, **kwargs): 
+                terms_not_in_key=None, ax=None, xlabel=None, ylabel=None, tidx=None, xscale=None, fig=None, cbar=True, nonDim=1, **kwargs): 
         """
         Plots a slice in the xz-plane. 
         
@@ -156,11 +159,13 @@ class PlotIO():
             xscale=1
 
         for term in terms_list: 
-            fig, ax = plt.subplots()
+            if not ax:
+                fig, ax = plt.subplots()
 
-            im = ax.imshow(slices[term].T, extent=slices['extent']*xscale, origin='lower', **kwargs)
+            im = ax.imshow(nonDim*slices[term].T, extent=slices['extent']*xscale, origin='lower', **kwargs)
 
-            common_cbar(fig, im, ax, label=term)
+            if cbar:
+                common_cbar(fig, im, ax, label=term)
 
             ax.set_xlabel(PlotIO.x_lab)
             ax.set_ylabel(PlotIO.z_lab)
@@ -172,7 +177,7 @@ class PlotIO():
 
 
     def plot_yz(self, io, x, ylim=None, zlim=None, budget_terms=None, field_terms=None, 
-                terms_not_in_key=None, ax=None, xlabel=None, ylabel=None, tidx=None, xscale=None,**kwargs): 
+                terms_not_in_key=None, ax=None, xlabel=None, ylabel=None, tidx=None, xscale=None, fig=None, cbar=True, nonDim=1,  **kwargs): 
         """
         Plots a slice in the yz-plane. 
         
@@ -215,11 +220,13 @@ class PlotIO():
             xscale=1
 
         for term in terms_list: 
-            fig, ax = plt.subplots()
+            if not ax:
+                fig, ax = plt.subplots()
 
-            im = ax.imshow(slices[term].T, extent=slices['extent']*xscale, origin='lower', **kwargs)
+            im = ax.imshow(nonDim*slices[term].T, extent=slices['extent']*xscale, origin='lower', **kwargs)
 
-            common_cbar(fig, im, ax, label=term)
+            if cbar:
+                common_cbar(fig, im, ax, label=term)
 
             ax.set_xlabel(PlotIO.y_lab)
             ax.set_ylabel(PlotIO.z_lab)
@@ -273,7 +280,7 @@ class PlotIO():
             i+=1
              
         if compute_residual:   
-            ax.bar(len(terms) + offset, np.trapz(np.trapz(np.trapz(residual[xid,yid,zid], 
+            ax.bar(len(terms), np.trapz(np.trapz(np.trapz(residual[xid,yid,zid], 
                                             x=io.zLine[zid], axis=2),
                                             x=io.yLine[yid], axis=1),
                                             x=io.xLine[xid], axis=0), linewidth=0.25, color='tab:gray')
@@ -291,7 +298,7 @@ class PlotIO():
         return fig, ax
     
     def grouped_bar_plot(self, io_list, terms, coords, color_list=None, alpha_list=None, 
-                 labels=None, compute_residual=True, fig=None, ax=None, legend_labels=None):
+                         labels=None, compute_residual=True, fig=None, ax=None, legend_labels=None, nonDim=[1,1,1,1,1]):
         """
         Plots volume-averaged terms in a bar chart. 
         
@@ -311,41 +318,61 @@ class PlotIO():
         width = 0.8/len(io_list)
 
         # assumes all the terms are the same for now
-        io = io_list[0]
+        # run through all ios in order to make sure RANS budgets are calculated
         if not isinstance(terms, list):
-            keys, colors = self.get_terms(io, terms)
+            for io in io_list:
+                terms_tmp, colors = self.get_terms(io, terms)
+
+            terms = terms_tmp
 
         if not color_list:
             color_list = plt.rcParams['axes.prop_cycle'].by_key()['color']     
-            print(len(color_list))
 
         if not alpha_list:
             alpha_list = np.ones(len(terms))      
 
-        xid, yid, zid = io.get_xids(x=coords[0], y=coords[1], z=coords[2], return_none=True, return_slice=True)
-        residuals = np.zeros([len(io_list), io.nx, io.ny, io.nz])
+        xid_list = []
+        yid_list = []
+        zid_list = []
+        res_list = []
+        for io in io_list:
+            xid, yid, zid = io.get_xids(x=coords[0], y=coords[1], z=coords[2], return_none=True, return_slice=True)
+            residuals = np.zeros([xid.stop-xid.start, yid.stop-yid.start, zid.stop-zid.start])
+            
+            xid_list.append(xid)
+            yid_list.append(yid)
+            zid_list.append(zid)
+
+            res_list.append(residuals)
 
         if not fig and not ax:
             fig, ax = plt.subplots()
         
         i = 0
         for term in terms:
+            print(term)
             for j in range(len(io_list)):
-                ax.bar(i + j*width, np.trapz(np.trapz(np.trapz(io_list[j].budget[term][xid,yid,zid], 
+                xid = xid_list[j]
+                yid = yid_list[j]
+                zid = zid_list[j]
+                ax.bar(i + j*width, nonDim[j]*np.trapz(np.trapz(np.trapz(io_list[j].budget[term][xid,yid,zid], 
                                             x=io_list[j].zLine[zid], axis=2),
                                             x=io_list[j].yLine[yid], axis=1),
                                             x=io_list[j].xLine[xid], axis=0), width=width, color=color_list[j], alpha=alpha_list[i])
-                residuals[j,:,:,:] = residuals[j,:,:,:] + io_list[j].budget[term]
+                res_list[j] = res_list[j] + io_list[j].budget[term][xid,yid,zid]
             i+=1
      
         legend = []
 
         if compute_residual:   
             for j in range(len(io_list)):
-                legend.append(ax.bar(len(terms) + j*width, np.trapz(np.trapz(np.trapz(residuals[j,xid,yid,zid], 
-                                                x=io_list[0].zLine[zid], axis=2),
-                                                x=io_list[0].yLine[yid], axis=1),
-                                                x=io_list[0].xLine[xid], axis=0), width=width, color=color_list[j]))
+                xid = xid_list[j]
+                yid = yid_list[j]
+                zid = zid_list[j]
+                legend.append(ax.bar(len(terms) + j*width, nonDim[j]*np.trapz(np.trapz(np.trapz(res_list[j], 
+                                                x=io_list[j].zLine[zid], axis=2),
+                                                x=io_list[j].yLine[yid], axis=1),
+                                                x=io_list[j].xLine[xid], axis=0), width=width, color=color_list[j]))
             if not labels:
                 labels = terms.copy()
                 labels.append('Res')
@@ -453,7 +480,7 @@ class PlotIO():
 
         return fig, ax
 
-    def plot_budget(self, io, budget, coords=None, fig=None, ax=None, alpha=1, zScale=1, nonDim=1):
+    def plot_budget(self, io, budget, coords=None, fig=None, ax=None, alpha=1, zScale=1, nonDim=1, **kwargs):
         '''
         Plots the MKE budget
         
@@ -466,75 +493,6 @@ class PlotIO():
         fig : figure object 
         ax : axes object
         '''
-
-        if budget == "x-mom":
-            comp_str = ['DuDt', 'x']
-        
-            keys = [key for key in io.key if io.key[key][0] == 1]
-            keys_tmp = [key for key in keys if comp_str[0] in key or comp_str[1] in key]
-            keys = [key for key in keys_tmp if "fluc" not in key and "mean" not in key]
-
-            colors = self.momentum_budget_colors
-
-
-        elif budget == "y-mom":
-            comp_str = ['DvDt', 'y']
-        
-            keys = [key for key in io.key if io.key[key][0] == 1]
-            keys_tmp = [key for key in keys if comp_str[0] in key or comp_str[1] in key]
-            keys = [key for key in keys_tmp if "fluc" not in key and "mean" not in key]
-
-            colors = self.momentum_budget_colors
-
-        elif budget == "z-mom":
-            comp_str = ['DwDt', 'z']
-        
-            keys = [key for key in io.key if io.key[key][0] == 1]
-            keys_tmp = [key for key in keys if comp_str[0] in key or comp_str[1] in key]
-            keys = [key for key in keys_tmp if "fluc" not in key and "mean" not in key]  
-
-            colors = self.momentum_budget_colors
-
-        elif budget == "x-RANS":
-            comp_str = ['DuDt', 'x']
-        
-            keys = [key for key in io.key if io.key[key][0] == 1]
-            keys = [key for key in keys if comp_str[0] in key or comp_str[1] in key]
-
-            colors = self.momentum_budget_colors
-
-
-        elif budget == "y-RANS":
-            comp_str = ['DvDt', 'y']
-        
-            keys = [key for key in io.key if io.key[key][0] == 1]
-            keys = [key for key in keys if comp_str[0] in key or comp_str[1] in key]
-
-            colors = self.momentum_budget_colors
-
-        elif budget == "z-RANS":
-            comp_str = ['DwDt', 'z']
-        
-            keys = [key for key in io.key if io.key[key][0] == 1]
-            keys = [key for key in keys if comp_str[0] in key or comp_str[1] in key]
-
-            colors = self.momentum_budget_colors
-
-
-        elif budget == "MKE":
-            keys = [key for key in io.key if io.key[key][0] == 2 and io.key[key][1] <= 10]
-            try: 
-                io.key['MKE_adv_delta_base']
-                keys.append('MKE_adv_delta_base')
-            except:
-                print("")
-
-        elif budget == "TKE":
-            keys = [key for key in io.key if io.key[key][0] == 3 and io.key[key][1] <= 8]
-            colors = self.budget_colors
-        else:
-            print("Please enter a valid budget type. Options include: x-mom, y-mom, z-mom, and MKE.")
-            return
 
         keys, colors = self.get_terms(io, budget)
         
@@ -550,12 +508,15 @@ class PlotIO():
 
         residual = 0
         
+        i=0
         for key in keys:
             # color = [color_value for color_key, color_value in colors if color_key in key]
+            color_list = plt.rcParams['axes.prop_cycle'].by_key()['color']     
 
-            ax.plot(np.mean(io.budget[key][xid,yid,zid], axis=(0,1))*nonDim, io.zLine*zScale, label=key, alpha=alpha)
+            ax.plot(np.mean(io.budget[key][xid,yid,zid], axis=(0,1))*nonDim, io.zLine*zScale, label=key, alpha=alpha, color=color_list[i], **kwargs)
 
             residual += io.budget[key]
+            i+=1
 
         ax.plot(np.mean(np.mean(residual[xid,yid,zid], axis=1), axis=0)*nonDim, 
             io.zLine*zScale, label='Residual', linestyle='--', color='black',alpha=alpha)
@@ -640,6 +601,8 @@ class PlotIO():
 
         elif budget == "TKE":
             keys = [key for key in io.key if io.key[key][0] == 3 and io.key[key][1] <= 8]
+            if 'TKE_adv_base_delta' in io.key.keys():
+                keys.insert(2,'TKE_adv_base_delta')
             colors = self.budget_colors
         else:
             print("Please enter a valid budget type. Options include: x-mom, y-mom, z-mom, and MKE.")
@@ -655,29 +618,35 @@ class PlotIO():
             keys = [key for key in io.key if io.key[key][0] == 1]
             keys = [key for key in keys if comp_str[1] in key]
 
+
             # check for RANS terms for BudgetIO object
             # if not there, run rans_calc()
             if isinstance(io, pio.DeficitIO):
+
                 keys.remove(comp_str[1] + 'Adv_total')
-                if comp_str[1] + 'mom_turb' not in io.budget:
-                    io.budget[comp_str[1] + 'mom_turb'] = io.budget[comp_str[1] + 'Adv_base_delta_fluc'] \
+
+                if comp_str[1] + 'turb' not in io.key.keys():
+                    io.budget[comp_str[1] + 'turb'] = io.budget[comp_str[1] + 'Adv_base_delta_fluc'] \
                                                 + io.budget[comp_str[1] + 'Adv_delta_delta_fluc'] \
                                                 + io.budget[comp_str[1] + 'Adv_delta_base_fluc']
-                    keys.remove(comp_str[1] + 'Adv_base_delta_fluc')
-                    keys.remove(comp_str[1] + 'Adv_delta_delta_fluc')
-                    keys.remove(comp_str[1]+ 'Adv_delta_base_fluc')
 
-                if comp_str[1] + 'mom_mean_adv' not in io.budget:
-                    io.budget[comp_str[1]+ 'mom_mean_adv'] = io.budget[comp_str[1] + 'Adv_base_delta_mean'] \
+                if comp_str[1] + 'adv_mean' not in io.key.keys():
+                    io.budget[comp_str[1]+ 'adv_mean'] = io.budget[comp_str[1] + 'Adv_base_delta_mean'] \
                                 + io.budget[comp_str[1] + 'Adv_delta_delta_mean']
-                    keys.remove(comp_str[1] + 'Adv_base_delta_fluc')
-                    keys.remove(comp_str[1] + 'Adv_delta_delta_fluc')
+
+                keys.remove(comp_str[1] + 'Adv_base_delta_fluc')
+                keys.remove(comp_str[1] + 'Adv_delta_delta_fluc')
+                keys.remove(comp_str[1] + 'Adv_delta_base_fluc')
+                keys.remove(comp_str[1] + 'Adv_base_delta_mean')
+#                keys.remove(comp_str[1] + 'Adv_delta_base_mean')
+                keys.remove(comp_str[1] + 'Adv_delta_delta_mean')
+
             elif isinstance(io, pio.BudgetIO):
-                if comp_str[1] + 'mom_turb' not in io.budget or comp_str[1] + 'mom_mean_adv' not in io.budget:
+                if comp_str[1] + 'turb' not in io.key or comp_str[1] + 'adv_mean' not in io.key:
                     io.rans_calc()
-                
-                keys.append(comp_str[1] + 'mom_mean_adv')
-                keys.append(comp_str[1] + 'mom_turb')
+
+            keys.insert(0,comp_str[1] + 'adv_mean')
+            keys.append(comp_str[1] + 'turb')
 
 
         return keys, colors
