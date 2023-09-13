@@ -344,7 +344,7 @@ class PlotIO():
             zid_list.append(zid)
 
             res_list.append(residuals)
-
+        print(zid_list)
         if not fig and not ax:
             fig, ax = plt.subplots()
         
@@ -703,4 +703,17 @@ def common_axis(fig, xlabel=None, ylabel=None, title=None):
     plt.title(title)
     
     return ax_new  # return the newly created axis
+
+def make_handle_tuples(ax):
+    handles, labels = ax.get_legend_handles_labels()
+    
+    handles_tuples = []
+    length = int(len(handles)/2)
+    
+    for i in range(length):
+        tmp_tuple = (handles[i], handles[i + length])
+        handles_tuples.append(tmp_tuple)
+        
+    return handles_tuples, labels[:length]
+    
 
