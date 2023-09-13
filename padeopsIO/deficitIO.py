@@ -247,3 +247,40 @@ class DeficitIO(pio.BudgetIO):
             return np.max(t_list)
         else: 
             return np.unique(t_list)
+
+    def grad_stress_calc(self, tidx=None, Lref=1):
+        """
+        Calculates the velocity and reynolds stress gradients 
+        """
+
+        self.budget['ddxk_delta_uiuj'] = np.zeros([self.nx, self.ny, self.nz, 3, 3, 3])
+        self.budget['ddxk_delta_ui_base_uj'] = np.zeros([self.nx, self.ny, self.nz, 3, 3, 3])
+
+        tmp_delta_uiuj = np.zeros([self.nx, self.ny, self.nz, 3, 3]) 
+        tmp_delta_ui_base_uj = np.zeros([self.nx, self.ny, self.nz, 3, 3]) 
+
+        tmp_delta_uiuj[:,:,:,0,0] = self.budget['delta_uu']
+        tmp_delta_uiuj[:,:,:,0,1] = self.budget['delta_uv']
+        tmp_delta_uiuj[:,:,:,0,2] = self.budget['delta_uw'] 
+        tmp_delta_uiuj[:,:,:,1,1] = self.budget['delta_vv']
+        tmp_delta_uiuj[:,:,:,1,2] = self.budget['delta_vw']
+        tmp_delta_uiuj[:,:,:,2,2] = self.budget['delta_ww']
+        
+        tmp_delta_ui_base_uj[:,:,:,0,0] = self.budget['delta_u_base_u']
+        tmp_delta_ui_base_uj[:,:,:,0,1] = self.budget['delta_u_base_v']
+        tmp_delta_ui_base_uj[:,:,:,0,2] = self.budget['delta_u_base_w']
+        tmp_delta_ui_base_uj[:,:,:,1,0] = self.budget['base_u_delta_v'] 
+        tmp_delta_ui_base_uj[:,:,:,1,1] = self.budget['delta_v_base_v']
+        tmp_delta_ui_base_uj[:,:,:,1,2] = self.budget['delta_v_base_w']
+        tmp_delta_ui_base_uj[:,:,:,2,0] = self.budget['base_u_delta_w']
+        tmp_delta_ui_base_uj[:,:,:,2,1] = self.budget['base_v_delta_w']
+        tmp_delta_ui_base_uj[:,:,:,2,2] = self.budget['delta_w_base_w']
+        
+        for j in range(3):
+            for k in range(3):
+                print(np.shape(np.gradient(tmp_delta_uiuj[:,:,:,j,k], self.xLine*Lref, self.yLine*Lref, self.zLine*Lref)))
+                self.budget['ddxi_delta_uiuj'][:,:,:,:,j,k] = np.transpose(np.gradient(tmp_delta_uiuj[:,:,:,j,k], self.xLine*Lref, self.yLine*Lref, self.zLine*Lref), [1,2,3,0]) 
+                self.budget['ddxi_delta_ui_base_uj'][:,:,:,:,j,k] = np.transpose(np.gradient(tmp_delta_ui_base_uj[:,:,:,j,k], self.xLine*Lref, self.yLine*Lref, self.zLine*Lref), [1,2,3,0]) 
+
+
+        return

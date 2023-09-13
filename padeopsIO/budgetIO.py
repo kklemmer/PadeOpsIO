@@ -2124,6 +2124,19 @@ class BudgetIO():
             tmp_grad_v = np.transpose(np.gradient(self.budget['delta_v'], self.xLine*Lref, self.yLine*Lref, self.zLine*Lref), [1,2,3,0])
             tmp_grad_w = np.transpose(np.gradient(self.budget['delta_w'], self.xLine*Lref, self.yLine*Lref, self.zLine*Lref), [1,2,3,0])
 
+        # gradient
+        self.budget['dUdx'] = tmp_grad_u[:,:,:,0]
+        self.budget['dUdy'] = tmp_grad_u[:,:,:,1]
+        self.budget['dUdz'] = tmp_grad_u[:,:,:,2]
+        self.budget['dVdx'] = tmp_grad_v[:,:,:,0]
+        self.budget['dVdy'] = tmp_grad_v[:,:,:,1]
+        self.budget['dVdz'] = tmp_grad_v[:,:,:,2]
+        self.budget['dWdx'] = tmp_grad_w[:,:,:,0]   
+        self.budget['dWdy'] = tmp_grad_w[:,:,:,1]   
+        self.budget['dWdz'] = tmp_grad_w[:,:,:,2]   
+
+
+        # strain rate tensor
         self.budget['S11'] = tmp_grad_u[:,:,:,0]
         self.budget['S12'] = 0.5*(tmp_grad_u[:,:,:,1] + tmp_grad_v[:,:,:,0])
         self.budget['S13'] = 0.5*(tmp_grad_u[:,:,:,2] + tmp_grad_w[:,:,:,0]) 
