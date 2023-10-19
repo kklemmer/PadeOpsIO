@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import sys
+import matplotlib.legend_handler
 
 import padeopsIO.budgetkey as budgetkey
 import padeopsIO.deficitkey as deficitkey
@@ -110,7 +111,7 @@ class PlotIO():
             ax.set_xlabel(PlotIO.x_lab)
             ax.set_ylabel(PlotIO.y_lab)
 
-            plt.show()
+          #  plt.show()
 
         return ax
 
@@ -170,7 +171,7 @@ class PlotIO():
             ax.set_xlabel(PlotIO.x_lab)
             ax.set_ylabel(PlotIO.z_lab)
 
-            plt.show()
+#            plt.show()
 
         return ax
     
@@ -230,7 +231,7 @@ class PlotIO():
 
             ax.set_xlabel(PlotIO.y_lab)
             ax.set_ylabel(PlotIO.z_lab)
-            plt.show()
+            #plt.show()
 
         return ax
 
@@ -257,8 +258,7 @@ class PlotIO():
             
         if not color_list:
             color_list = plt.rcParams['axes.prop_cycle'].by_key()['color']     
-            print(len(color_list))
-
+            
         if not alpha_list:
             alpha_list = np.ones(len(terms))      
 
@@ -344,13 +344,11 @@ class PlotIO():
             zid_list.append(zid)
 
             res_list.append(residuals)
-        print(zid_list)
         if not fig and not ax:
             fig, ax = plt.subplots()
         
         i = 0
         for term in terms:
-            print(term)
             for j in range(len(io_list)):
                 xid = xid_list[j]
                 yid = yid_list[j]
@@ -503,6 +501,7 @@ class PlotIO():
         else:
             xid, yid, zid = io.get_xids(x=coords[0], y=coords[1], z=coords[2], return_none=True, return_slice=True)
 
+
         if not fig and not ax:
             fig, ax = plt.subplots()
 
@@ -513,7 +512,7 @@ class PlotIO():
             # color = [color_value for color_key, color_value in colors if color_key in key]
             color_list = plt.rcParams['axes.prop_cycle'].by_key()['color']     
 
-            ax.plot(np.mean(io.budget[key][xid,yid,zid], axis=(0,1))*nonDim, io.zLine*zScale, label=key, alpha=alpha, color=color_list[i], **kwargs)
+            ax.plot(np.mean(io.budget[key][xid,yid,zid], axis=(0,1))*nonDim, io.zLine*zScale, label=key, alpha=alpha,  color=color_list[i], **kwargs)
 
             residual += io.budget[key]
             i+=1
@@ -525,9 +524,54 @@ class PlotIO():
             
         return fig, ax
 
-    def plot_var_in_time(self, io, variables, coords=None, increment=1, timeDim=1000, zScale=1):
+    def plot_budget_in_x(self, io, budget, coords=None, fig=None, ax=None, alpha=1, xScale=1, nonDim=1, **kwargs):
+        '''
+        Plots a given budget
         
-        print(variables)
+        Arguments
+        ---------
+        io (BudgetIO of DeficitIO obj) : BudgetIO or DeficitIo object linked to padeops data
+        coords (tuple) : tuple of x, y, and z limits
+        Returns
+        -------
+        fig : figure object 
+        ax : axes object
+        '''
+
+        keys, colors = self.get_terms(io, budget)
+        
+        if not coords:
+            xid = (slice(0, len(io.xLine)), )
+            yid = (slice(0, len(io.yLine)), )
+            zid = (slice(0, len(io.zLine)), ) 
+        else:
+            xid, yid, zid = io.get_xids(x=coords[0], y=coords[1], z=coords[2], return_none=True, return_slice=True)
+
+
+        if not fig and not ax:
+            fig, ax = plt.subplots()
+
+        residual = 0
+        
+        i=0
+        for key in keys:
+            # color = [color_value for color_key, color_value in colors if color_key in key]
+            color_list = plt.rcParams['axes.prop_cycle'].by_key()['color']     
+
+            ax.plot(io.xLine[xid]*xScale, np.mean(io.budget[key][xid,yid,zid], axis=(1,2))*nonDim, label=key, alpha=alpha,  color=color_list[i], **kwargs)
+
+            residual += io.budget[key]
+            i+=1
+
+        ax.plot(io.xLine[xid]*xScale, np.mean(residual[xid,yid,zid], axis=(1,2))*nonDim, 
+            label='Residual', linestyle='--', color='black',alpha=alpha)
+
+        ax.set_ylabel('$z/D$')
+            
+        return fig, ax
+
+
+    def plot_var_in_time(self, io, variables, coords=None, increment=1, timeDim=1000, zScale=1):
 
         if not variables:
             print("Need to set variables.")
@@ -600,9 +644,13 @@ class PlotIO():
             colors = self.budget_colors
 
         elif budget == "TKE":
-            keys = [key for key in io.key if io.key[key][0] == 3 and io.key[key][1] <= 8]
-            if 'TKE_adv_base_delta' in io.key.keys():
-                keys.insert(2,'TKE_adv_base_delta')
+            keys = [key for key in io.key if io.key[key][0] == 3 and io.key[key][1] <= 11]
+            if 'TKE_adv_delta_base' in io.key.keys():
+                keys.insert(2,'TKE_adv_delta_base')
+            if 'TKE_turb_transport_delta_base' in io.key.keys():
+                keys.insert(2,'TKE_turb_transport_delta_base')
+            if 'TKE_prod_delta_delta' in io.key.keys():
+                keys.remove('TKE_production')
             colors = self.budget_colors
         else:
             print("Please enter a valid budget type. Options include: x-mom, y-mom, z-mom, and MKE.")
@@ -621,7 +669,7 @@ class PlotIO():
 
             # check for RANS terms for BudgetIO object
             # if not there, run rans_calc()
-            if isinstance(io, pio.DeficitIO):
+            if comp_str[1] + 'Adv_total' in io.key.keys():
 
                 keys.remove(comp_str[1] + 'Adv_total')
 
@@ -641,9 +689,8 @@ class PlotIO():
 #                keys.remove(comp_str[1] + 'Adv_delta_base_mean')
                 keys.remove(comp_str[1] + 'Adv_delta_delta_mean')
 
-            elif isinstance(io, pio.BudgetIO):
-                if comp_str[1] + 'turb' not in io.key or comp_str[1] + 'adv_mean' not in io.key:
-                    io.rans_calc()
+            elif comp_str[1] + 'turb' not in io.key.keys() or comp_str[1] + 'adv_mean' not in io.key.keys():
+                io.rans_calc()
 
             keys.insert(0,comp_str[1] + 'adv_mean')
             keys.append(comp_str[1] + 'turb')

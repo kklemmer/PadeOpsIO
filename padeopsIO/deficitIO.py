@@ -275,12 +275,12 @@ class DeficitIO(pio.BudgetIO):
         tmp_delta_ui_base_uj[:,:,:,2,0] = self.budget['base_u_delta_w']
         tmp_delta_ui_base_uj[:,:,:,2,1] = self.budget['base_v_delta_w']
         tmp_delta_ui_base_uj[:,:,:,2,2] = self.budget['delta_w_base_w']
+
         
         for j in range(3):
             for k in range(3):
-                print(np.shape(np.gradient(tmp_delta_uiuj[:,:,:,j,k], self.xLine*Lref, self.yLine*Lref, self.zLine*Lref)))
-                self.budget['ddxi_delta_uiuj'][:,:,:,:,j,k] = np.transpose(np.gradient(tmp_delta_uiuj[:,:,:,j,k], self.xLine*Lref, self.yLine*Lref, self.zLine*Lref), [1,2,3,0]) 
-                self.budget['ddxi_delta_ui_base_uj'][:,:,:,:,j,k] = np.transpose(np.gradient(tmp_delta_ui_base_uj[:,:,:,j,k], self.xLine*Lref, self.yLine*Lref, self.zLine*Lref), [1,2,3,0]) 
+                self.budget['ddxk_delta_uiuj'][:,:,:,j,k,:] = np.transpose(np.gradient(tmp_delta_uiuj[:,:,:,j,k], self.xLine*Lref, self.yLine*Lref, self.zLine*Lref), [1,2,3,0]) 
+                self.budget['ddxk_delta_ui_base_uj'][:,:,:,j,k,:] = np.transpose(np.gradient(tmp_delta_ui_base_uj[:,:,:,j,k], self.xLine*Lref, self.yLine*Lref, self.zLine*Lref), [1,2,3,0]) 
 
 
         return

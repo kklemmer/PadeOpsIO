@@ -312,8 +312,8 @@ class BudgetIO():
         else: 
             self.Fr = np.Inf
 
-        if self.input_nml['problem_input']['Tref']:
-            self.Tref = self.input_nml['problem_input']['Tref']
+#        if self.input_nml['problem_input']['Tref']:
+#            self.Tref = self.input_nml['problem_input']['Tref']
         
         
 
@@ -695,7 +695,7 @@ class BudgetIO():
             'v':'vVel', 
             'w':'wVel', 
             'p':'prss', 
-            'T':'potT', 
+            #'T':'potT', 
         #    'pfrn': 'pfrn',  # fringe pressure
         #    'pdns': 'pdns',  # DNS pressure... what is this? 
         #    'ptrb': 'ptrb',  # turbine pressure... what is this? 
@@ -2077,31 +2077,31 @@ class BudgetIO():
         """
         Calculates the rans budget terms (splits the advection term)
         """
-        self.budget['xmom_mean_adv'] = np.zeros([self.nx, self.ny, self.nz])
-        self.budget['ymom_mean_adv'] = np.zeros([self.nx, self.ny, self.nz])
-        self.budget['zmom_mean_adv'] = np.zeros([self.nx, self.ny, self.nz])
+        self.budget['xadv_mean'] = np.zeros([self.nx, self.ny, self.nz])
+        self.budget['xadv_mean'] = np.zeros([self.nx, self.ny, self.nz])
+        self.budget['zadv_mean'] = np.zeros([self.nx, self.ny, self.nz])
 
-        self.budget['xmom_turb'] = np.zeros([self.nx, self.ny, self.nz])
-        self.budget['ymom_turb'] = np.zeros([self.nx, self.ny, self.nz])
-        self.budget['zmom_turb'] = np.zeros([self.nx, self.ny, self.nz])
+        self.budget['xturb'] = np.zeros([self.nx, self.ny, self.nz])
+        self.budget['yturb'] = np.zeros([self.nx, self.ny, self.nz])
+        self.budget['zturb'] = np.zeros([self.nx, self.ny, self.nz])
 
         tmp_grad = np.transpose(np.gradient(self.budget['ubar'], self.xLine, self.yLine, self.zLine), [1,2,3,0])
-        self.budget['xmom_mean_adv'] = - np.multiply(self.budget['ubar'], tmp_grad[:,:,:,0]) \
+        self.budget['xadv_mean'] = - np.multiply(self.budget['ubar'], tmp_grad[:,:,:,0]) \
                                     - np.multiply(self.budget['vbar'], tmp_grad[:,:,:,1]) \
                                     - np.multiply(self.budget['wbar'], tmp_grad[:,:,:,2])
-        self.budget['xmom_turb'] = self.budget['DuDt'] - self.budget['xmom_mean_adv']
+        self.budget['xturb'] = self.budget['DuDt'] - self.budget['xmom_mean_adv']
 
         tmp_grad = np.transpose(np.gradient(self.budget['vbar'], self.xLine, self.yLine, self.zLine), [1,2,3,0])
-        self.budget['ymom_mean_adv'] = - np.multiply(self.budget['ubar'], tmp_grad[:,:,:,0]) \
+        self.budget['yadv_mean'] = - np.multiply(self.budget['ubar'], tmp_grad[:,:,:,0]) \
                                     - np.multiply(self.budget['vbar'], tmp_grad[:,:,:,1]) \
                                     - np.multiply(self.budget['wbar'], tmp_grad[:,:,:,2])
-        self.budget['ymom_turb'] = self.budget['DuDt'] - self.budget['xmom_mean_adv']
+        self.budget['yturb'] = self.budget['DvDt'] - self.budget['xmom_mean_adv']
 
         tmp_grad = np.transpose(np.gradient(self.budget['wbar'], self.xLine, self.yLine, self.zLine), [1,2,3,0])
-        self.budget['zmom_mean_adv'] = - np.multiply(self.budget['ubar'], tmp_grad[:,:,:,0]) \
+        self.budget['zadv_mean'] = - np.multiply(self.budget['ubar'], tmp_grad[:,:,:,0]) \
                                     - np.multiply(self.budget['vbar'], tmp_grad[:,:,:,1]) \
                                     - np.multiply(self.budget['wbar'], tmp_grad[:,:,:,2])
-        self.budget['zmom_turb'] = self.budget['DuDt'] - self.budget['xmom_mean_adv']   
+        self.budget['zturb'] = self.budget['DwDt'] - self.budget['xmom_mean_adv']   
 
     def grad_calc(self, tidx=None, precursor=None, Lref=1):
         """precursor
