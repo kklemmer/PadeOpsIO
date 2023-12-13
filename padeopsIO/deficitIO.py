@@ -7,6 +7,8 @@ import glob
 import padeopsIO.budgetIO as pio
 import padeopsIO.deficitkey as deficitkey  # defines key pairing
 
+from padeopsIO.budget_utils import *
+
 
 class DeficitIO(pio.BudgetIO): 
 
@@ -265,7 +267,7 @@ class DeficitIO(pio.BudgetIO):
         tmp_delta_uiuj[:,:,:,1,1] = self.budget['delta_vv']
         tmp_delta_uiuj[:,:,:,1,2] = self.budget['delta_vw']
         tmp_delta_uiuj[:,:,:,2,2] = self.budget['delta_ww']
-        
+         
         tmp_delta_ui_base_uj[:,:,:,0,0] = self.budget['delta_u_base_u']
         tmp_delta_ui_base_uj[:,:,:,0,1] = self.budget['delta_u_base_v']
         tmp_delta_ui_base_uj[:,:,:,0,2] = self.budget['delta_u_base_w']
@@ -275,12 +277,109 @@ class DeficitIO(pio.BudgetIO):
         tmp_delta_ui_base_uj[:,:,:,2,0] = self.budget['base_u_delta_w']
         tmp_delta_ui_base_uj[:,:,:,2,1] = self.budget['base_v_delta_w']
         tmp_delta_ui_base_uj[:,:,:,2,2] = self.budget['delta_w_base_w']
-
         
         for j in range(3):
             for k in range(3):
-                self.budget['ddxk_delta_uiuj'][:,:,:,j,k,:] = np.transpose(np.gradient(tmp_delta_uiuj[:,:,:,j,k], self.xLine*Lref, self.yLine*Lref, self.zLine*Lref), [1,2,3,0]) 
-                self.budget['ddxk_delta_ui_base_uj'][:,:,:,j,k,:] = np.transpose(np.gradient(tmp_delta_ui_base_uj[:,:,:,j,k], self.xLine*Lref, self.yLine*Lref, self.zLine*Lref), [1,2,3,0]) 
+                print(np.shape(np.gradient(tmp_delta_uiuj[:,:,:,j,k], self.xLine*Lref, self.yLine*Lref, self.zLine*Lref)))
+                self.budget['ddxi_delta_uiuj'][:,:,:,:,j,k] = np.transpose(np.gradient(tmp_delta_uiuj[:,:,:,j,k], self.xLine*Lref, self.yLine*Lref, self.zLine*Lref), [1,2,3,0]) 
+                self.budget['ddxi_delta_ui_base_uj'][:,:,:,:,j,k] = np.transpose(np.gradient(tmp_delta_ui_base_uj[:,:,:,j,k], self.xLine*Lref, self.yLine*Lref, self.zLine*Lref), [1,2,3,0]) 
 
 
         return
+
+    def tke_budget_calc(self, pre, prim):
+        """
+        Calculates terms in the TKE budget grouped together
+        """
+
+        # read in necessary terms for deficit budget
+        def_budget_terms = [term for term in self.key if self.key[term][0] == 3]
+        self.read_budgets(budget_terms=def_budget_terms)
+        def_budget0_terms = ['delta_u', 'delta_v', 'delta_w', 'delta_uu', 'delta_vv', 'delta_ww', 
+                                'delta_uv', 'delta_vw', 'delta_uw', 'delta_u_base_u',
+                                'delta_u_base_v', 'base_u_delta_v', 'delta_u_base_w', 'base_u_delta_w',
+                                'delta_v_base_v', 'delta_v_base_w', 'base_v_delta_w','delta_w_base_w', 
+                                'delta_tau11', 'delta_tau12', 'delta_tau13', 'delta_tau22', 'delta_tau23',
+                                'delta_tau33']
+        self.read_budgets(budget_terms=def_budget0_terms)
+
+        # read in necessary terms for precursor and primary budgets
+        budget_terms = [term for term in pre.key if pre.key[term][0] == 3]
+        pre.read_budgets(budget_terms=budget_terms)
+        prim.read_budgets(budget_terms=budget_terms) 
+
+        budget0_terms = ['ubar', 'vbar', 'wbar', 'uu', 'vv', 'ww', 'uv', 'uw', 'vw', 'tau11', 'tau12', 
+                        'tau22', 'tau23', 'tau33', 'tau13']
+        pre.read_budgets(budget_terms=budget0_terms)
+        prim.read_budgets(budget_terms=budget0_terms)
+
+        # calculate velocity gradients
+        pre.grad_calc()
+        prim.grad_calc()
+        self.grad_calc()
+
+        # define TKE
+        pre.budget['TKE'] = 0.5*(pre.budget['uu'] + pre.budget['vv'] + pre.budget['ww'])
+        prim.budget['TKE'] = 0.5*(prim.budget['uu'] + prim.budget['vv'] + prim.budget['ww'])
+
+        self.budget['TKE_wake'] = prim.budget['TKE'] - pre.budget['TKE']
+        self.budget['delta_TKE'] = 0.5*(self.budget['delta_uu'] + self.budget['delta_vv'] + self.budget['delta_ww'])
+        self.budget['delta_ui_base_ui'] = self.budget['delta_u_base_u'] + self.budget['delta_v_base_v'] + self.budget['delta_w_base_w']
+
+        # make stress tensors
+        delta_ui_base_uj = construct_delta_ui_base_uj(self)
+        # print(delta_ui_base_uj)
+
+        base_uiuj = construct_uiuj(pre)
+
+        # make velocity gradient tensors
+        base_duidxj = construct_duidxj(pre)
+
+        delta_duidxj = construct_duidxj(self)
+
+
+        # calculate TKE wake budget (prim - pre)
+        for term in budget_terms:
+                self.budget[term + "_wake"] = prim.budget[term] - pre.budget[term]
+
+        # advection terms
+        dx = self.dx
+        dy = self.dy
+        dz = self.dz
+        self.budget['mixed_TKE_base_adv'] = advection([pre.budget['ubar'], pre.budget['vbar'], pre.budget['wbar']], self.budget['delta_ui_base_ui'], dx, dy, dz)
+        self.budget['mixed_TKE_delta_adv'] = advection([self.budget['delta_u'], self.budget['delta_v'], self.budget['delta_w']], self.budget['delta_ui_base_ui'], dx, dy, dz)
+
+        self.budget['mixed_TKE_adv_delta_base_k'] = advection([self.budget['delta_u'], self.budget['delta_v'], self.budget['delta_w']], pre.budget['TKE'], dx, dy, dz)
+        self.budget['mixed_TKE_adv_delta_base'] = self.budget['mixed_TKE_base_adv'] - self.budget['TKE_adv_delta_base']
+
+        self.budget['mixed_TKE_adv'] = self.budget['TKE_adv_wake'] - self.budget['TKE_adv'] - self.budget['TKE_adv_delta_base']
+
+        # production terms
+        self.budget['mixed_TKE_prod_base_base_delta'] = -np.sum(np.multiply(base_uiuj, delta_duidxj), axis=(3,4))
+        self.budget['mixed_TKE_prod_base_delta_delta'] = -np.sum(np.multiply(np.transpose(delta_ui_base_uj, [0,1,2,4,3]), delta_duidxj), axis=(3,4))
+        self.budget['mixed_TKE_prod_base_delta_base'] = -np.sum(np.multiply(np.transpose(delta_ui_base_uj, [0,1,2,4,3]), base_duidxj), axis=(3,4))
+        self.budget['mixed_TKE_prod_delta_base_base'] = -np.sum(np.multiply(delta_ui_base_uj, base_duidxj), axis=(3,4))
+
+        self.budget['mixed_TKE_prod'] = self.budget['TKE_shear_production_wake'] - self.budget['TKE_production'] - self.budget['TKE_prod_delta_base']
+
+        # transport terms
+        self.budget['mixed_TKE_p_transport'] = self.budget['TKE_p_transport_wake'] - self.budget['TKE_p_transport']
+        self.budget['mixed_TKE_SGS_transport'] = self.budget['TKE_SGS_transport_wake'] - self.budget['TKE_SGS_transport']
+        self.budget['mixed_TKE_turb_transport'] = self.budget['TKE_turb_transport_wake'] - self.budget['TKE_turb_transport'] \
+                                                    - self.budget['TKE_turb_transport_delta_base']
+        
+        # buoyancy
+        self.budget['mixed_TKE_buoyancy'] = self.budget['TKE_buoyancy_wake'] - self.budget['TKE_buoyancy']
+
+        # dissipation
+        self.budget['mixed_TKE_dissipation'] = self.budget['TKE_dissipation_wake'] - self.budget['TKE_dissipation']
+
+
+
+    def non_dim_vel(self):
+        vel_keys = ['delta_u', 'delta_v', 'delta_w']
+
+        Ug = key_search_r(self.input_nml, 'g_geostrophic')
+
+        for key in vel_keys:
+            self.budget[key] /= Ug
