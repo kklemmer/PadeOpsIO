@@ -1,11 +1,14 @@
 import matplotlib.pyplot as plt
 import numpy as np
-import os
-import sys
 import matplotlib.legend_handler
+import scipy.interpolate
+from matplotlib import colors
+from mpl_toolkits.mplot3d import Axes3D
 
 import padeopsIO.budgetkey as budgetkey
 import padeopsIO.deficitkey as deficitkey
+
+import seaborn as sns
 
 import padeopsIO as pio
 
@@ -100,7 +103,7 @@ class PlotIO():
             xscale=1
 
         for term in terms_list:
-            if not ax:
+            if ax is None:
                 fig, ax = plt.subplots()
         
             im = ax.imshow(nonDim*slices[term].T, extent=slices['extent']*xscale, origin='lower',**kwargs)
@@ -160,7 +163,7 @@ class PlotIO():
             xscale=1
 
         for term in terms_list: 
-            if not ax:
+            if ax is None:
                 fig, ax = plt.subplots()
 
             im = ax.imshow(nonDim*slices[term].T, extent=slices['extent']*xscale, origin='lower', **kwargs)
@@ -221,7 +224,7 @@ class PlotIO():
             xscale=1
 
         for term in terms_list: 
-            if not ax:
+            if ax is None:
                 fig, ax = plt.subplots()
 
             im = ax.imshow(nonDim*slices[term].T, extent=slices['extent']*xscale, origin='lower', **kwargs)
@@ -235,8 +238,83 @@ class PlotIO():
 
         return ax
 
+
     def bar_plot(self, io, terms, coords, color_list=None, alpha_list=None, 
-                 labels=None, compute_residual=True, fig=None, ax=None):
+                 labels=None, compute_residual=True, mask = None, fig=None, ax=None, nonDim=1):
+        """
+        Plots volume-averaged terms in a bar chart. 
+        
+        Arguments
+        ---------
+        io (BudgetIO of DeficitIO obj) : BudgetIO or DeficitIo object linked to padeops data
+        terms (list or str) : terms to plot
+        coords (tuple) : tuple of x, y, and z limits
+        color_list (list) : list of plot colors in order of terms
+        alpha_list (list) : list of alpha values in order of terms
+
+        Returns 
+        -------
+        fig, ax
+        """
+
+        if not isinstance(terms, list):
+            terms, colors = self.get_terms(io, terms)
+            
+        if not color_list:
+            color_list = sns.color_palette("tab10", len(terms))
+            
+        if not alpha_list:
+            alpha_list = np.ones(len(terms))      
+
+        print(len(terms))
+        print(len(color_list))
+
+        xid, yid, zid = io.get_xids(x=coords[0], y=coords[1], z=coords[2], return_none=True, return_slice=True)
+        residual = 0
+
+        if mask is None:
+            mask = np.ones([io.nx, io.ny, io.nz])
+
+
+        if not fig and not ax:
+            fig, ax = plt.subplots()
+
+        # if mask is not None:
+
+        i = 0
+        for term in terms:
+            # ax.bar(i, np.trapz(mask[xid,yid,zid] * io.budget[term][xid,yid,zid] * nonDim, dx=[io.dx,io.dy,io.dz]), 
+                # linewidth=0.25, color=color_list[i], alpha=alpha_list[i])
+            ax.bar(i, np.trapz(np.trapz(np.trapz(mask[xid,yid,zid] * io.budget[term][xid,yid,zid], 
+                                        x=io.zLine[zid], axis=2),
+                                        x=io.yLine[yid], axis=1),
+                                        x=io.xLine[xid], axis=0)*nonDim, linewidth=0.25, color=color_list[i], alpha=alpha_list[i])
+            
+            residual = residual + io.budget[term]
+            i+=1
+             
+        if compute_residual:   
+            # ax.bar(len(terms), np.trapz(mask[xid,yid,zid] * residual[xid,yid,zid] * nonDim) \
+            #         * io.dx * io.dy * io.dz, linewidth=0.25, color='black')
+            ax.bar(len(terms), np.trapz(np.trapz(np.trapz(mask[xid,yid,zid] * residual[xid,yid,zid], 
+                                            x=io.zLine[zid], axis=2),
+                                            x=io.yLine[yid], axis=1),
+                                            x=io.xLine[xid], axis=0)*nonDim, linewidth=0.25, color='tab:gray')
+            if not labels:
+                labels = terms.copy()
+                labels.append('Res')
+                
+        
+            ax.set_xticks(range(len(terms)+1))
+        else:
+            ax.set_xticks(range(len(terms)))      
+        
+        ax.set_xticklabels(labels)
+
+        return fig, ax
+
+    def bar_plot_streamtube(self, io, terms, xcoords, color_list=None, alpha_list=None, 
+                 labels=None, compute_residual=True, mask = None, fig=None, ax=None, nonDim=1):
         """
         Plots volume-averaged terms in a bar chart. 
         
@@ -262,28 +340,38 @@ class PlotIO():
         if not alpha_list:
             alpha_list = np.ones(len(terms))      
 
-        xid, yid, zid = io.get_xids(x=coords[0], y=coords[1], z=coords[2], return_none=True, return_slice=True)
+        x1 = np.argmin(np.abs(io.xLine - xcoords[0]))
+        x2 = np.argmin(np.abs(io.xLine - xcoords[1]))
+
+        print(x1)
+        print(x2)
         residual = 0
+
 
         if not fig and not ax:
             fig, ax = plt.subplots()
 
-        
         i = 0
         for term in terms:
-            ax.bar(i, np.trapz(np.trapz(np.trapz(io.budget[term][xid,yid,zid], 
-                                        x=io.zLine[zid], axis=2),
-                                        x=io.yLine[yid], axis=1),
-                                        x=io.xLine[xid], axis=0), linewidth=0.25, color=color_list[i], alpha=alpha_list[i])
+            tmp = np.sum(mask * io.budget[term], (1,2)) * io.dy * io.dz
+            ax.bar(i, np.sum(tmp[x1:x2] * nonDim) * io.dx, 
+                    linewidth=0.25, color=color_list[i], alpha=alpha_list[i])
+            # ax.bar(i, np.trapz(np.trapz(np.trapz(mask[xid,yid,zid] * io.budget[term][xid,yid,zid], 
+            #                             x=io.zLine[zid], axis=2),
+            #                             x=io.yLine[yid], axis=1),
+            #                             x=io.xLine[xid], axis=0)*nonDim, linewidth=0.25, color=color_list[i], alpha=alpha_list[i])
             
             residual = residual + io.budget[term]
             i+=1
              
         if compute_residual:   
-            ax.bar(len(terms), np.trapz(np.trapz(np.trapz(residual[xid,yid,zid], 
-                                            x=io.zLine[zid], axis=2),
-                                            x=io.yLine[yid], axis=1),
-                                            x=io.xLine[xid], axis=0), linewidth=0.25, color='tab:gray')
+            tmp_res = np.sum(mask * residual, (1,2)) * io.dy * io.dz
+            ax.bar(len(terms), np.sum(residual[x1:x2] * nonDim) * io.dx,
+                    linewidth=0.25, color='tab:gray')
+            # ax.bar(len(terms), np.trapz(np.trapz(np.trapz(mask[xid,yid,zid] * residual[xid,yid,zid], 
+            #                                 x=io.zLine[zid], axis=2),
+            #                                 x=io.yLine[yid], axis=1),
+            #                                 x=io.xLine[xid], axis=0)*nonDim, linewidth=0.25, color='tab:gray')
             if not labels:
                 labels = terms.copy()
                 labels.append('Res')
@@ -298,7 +386,8 @@ class PlotIO():
         return fig, ax
     
     def grouped_bar_plot(self, io_list, terms, coords, color_list=None, alpha_list=None, 
-                         labels=None, compute_residual=True, fig=None, ax=None, legend_labels=None, nonDim=[1,1,1,1,1]):
+                         labels=None, compute_residual=True, fig=None, ax=None, legend_labels=None, nonDim=[1,1,1,1,1],
+                         wake=False):
         """
         Plots volume-averaged terms in a bar chart. 
         
@@ -325,6 +414,10 @@ class PlotIO():
 
             terms = terms_tmp
 
+        # option to append "_wake" to terms
+        if not isinstance(wake, list):
+            wake = [False] * len(io_list)
+
         if not color_list:
             color_list = plt.rcParams['axes.prop_cycle'].by_key()['color']     
 
@@ -350,6 +443,8 @@ class PlotIO():
         i = 0
         for term in terms:
             for j in range(len(io_list)):
+                if wake[j]:
+                    term = term + "_wake"
                 xid = xid_list[j]
                 yid = yid_list[j]
                 zid = zid_list[j]
@@ -384,6 +479,203 @@ class PlotIO():
 
         if not legend_labels:
             legend_labels = ['unstable','neutral', 'stable']
+        ax.legend(handles=legend, labels=legend_labels)
+
+        return fig, ax
+
+    def grouped_bar_plot2(self, io_list, terms, coords, color_list=None, alpha_list=None, 
+                         labels=None, compute_residual=True,  masks=None, fig=None, ax=None, 
+                         legend_labels=None, nonDim=[1,1,1,1,1], wake = False):
+        """
+        Plots volume-averaged terms in a bar chart. 
+        
+        Arguments
+        ---------
+        io (BudgetIO of DeficitIO obj) : BudgetIO or DeficitIo object linked to padeops data
+        terms (list or str) : terms to plot
+        coords (tuple) : tuple of x, y, and z limits
+        color_list (list) : list of plot colors in order of terms
+        alpha_list (list) : list of alpha values in order of terms
+
+        Returns 
+        -------
+        fig, ax
+        """
+        # define width of bars based on number of ios
+        width = 0.8/len(io_list)
+
+        # assumes all the terms are the same for now
+        # run through all ios in order to make sure RANS budgets are calculated
+        if not isinstance(terms, list):
+            for io in io_list:
+                terms_tmp, colors = self.get_terms(io, terms)
+
+            terms = terms_tmp
+
+        # option to append "_wake" to terms
+        if not isinstance(wake, list):
+            wake = [False] * len(io_list)
+
+        if masks is None:
+            masks = []
+            for io in io_list:
+                masks.append(np.ones([io.nx, io.ny, io.nz]))
+
+        if not color_list:
+            color_list = sns.color_palette("tab10", len(terms)) 
+
+        if not alpha_list:
+            alpha_list = np.ones(len(terms))      
+
+        xid_list = []
+        yid_list = []
+        zid_list = []
+        res_list = []
+        for io in io_list:
+            xid, yid, zid = io.get_xids(x=coords[0], y=coords[1], z=coords[2], return_none=True, return_slice=True)
+            residuals = np.zeros([xid.stop-xid.start, yid.stop-yid.start, zid.stop-zid.start])
+
+            xid_list.append(xid)
+            yid_list.append(yid)
+            zid_list.append(zid)
+
+            res_list.append(residuals)
+        if not fig and not ax:
+            fig, ax = plt.subplots()
+        
+        i = 0
+        legend = []            
+        for term in terms:
+            print(term)
+            for j in range(len(io_list)):
+                # if wake[j]:
+                #     term = term + "_wake"
+                # else:
+                #     term = term.replace('_wake', "")
+                xid = xid_list[j]
+                yid = yid_list[j]
+                zid = zid_list[j]
+                if i==0:
+                    legend.append(ax.bar(i + j*width, nonDim[j]*np.trapz(np.trapz(np.trapz(io_list[j].budget[term][xid,yid,zid] \
+                                            * masks[j][xid,yid,zid], 
+                                            x=io_list[j].zLine[zid], axis=2),
+                                            x=io_list[j].yLine[yid], axis=1),
+                                                       x=io_list[j].xLine[xid], axis=0), width=width, color=color_list[i], alpha=alpha_list[j]))
+                else:
+                    ax.bar(i + j*width, nonDim[j]*np.trapz(np.trapz(np.trapz(io_list[j].budget[term][xid,yid,zid] \
+                                            * masks[j][xid,yid,zid], 
+                                            x=io_list[j].zLine[zid], axis=2),
+                                            x=io_list[j].yLine[yid], axis=1),
+                                                       x=io_list[j].xLine[xid], axis=0), width=width, color=color_list[i], alpha=alpha_list[j])
+                res_list[j] = res_list[j] + io_list[j].budget[term][xid,yid,zid]
+            i+=1
+     
+
+        if compute_residual:   
+            for j in range(len(io_list)):
+                xid = xid_list[j]
+                yid = yid_list[j]
+                zid = zid_list[j]
+                ax.bar(len(terms) + j*width, nonDim[j]*np.trapz(np.trapz(np.trapz(res_list[j] * masks[j][xid,yid,zid], 
+                                                x=io_list[j].zLine[zid], axis=2),
+                                                x=io_list[j].yLine[yid], axis=1),
+                                                x=io_list[j].xLine[xid], axis=0), width=width, color='black', alpha=alpha_list[j])
+            if not labels:
+                labels = terms.copy()
+                labels.append('Res')
+                
+        
+            ax.set_xticks(range(len(terms)+1))
+        else:
+            ax.set_xticks(range(len(terms)))      
+        
+        ax.set_xticklabels(labels)
+
+        if not legend_labels:
+            legend_labels = ['unstable','neutral', 'stable']
+        ax.legend(handles=legend, labels=legend_labels)
+
+        return fig, ax
+
+
+    def grouped_bar_plot3(self, io_dict, coords, labels=None, color_list=None, mask=False, fig=None, ax=None):
+        """
+        Plots volume-averaged terms in a bar chart. 
+        
+        Arguments
+        ---------
+        io_dict : dictionary containing BudgetIO or Deficit IO objects
+
+        Returns 
+        -------
+        fig, ax
+        """
+        # define width of bars based on number of ios
+        width = 0.8/len(io_dict)
+
+        if not color_list:
+            color_list = sns.color_palette("tab10", len(terms))    
+        for io in io_dict:
+            xid, yid, zid = io_dict[io]['io'].get_xids(x=coords[0], y=coords[1], z=coords[2], return_none=True, return_slice=True)
+            residuals = np.zeros([xid.stop-xid.start, yid.stop-yid.start, zid.stop-zid.start])
+
+            io_dict[io]['xid'] = xid
+            io_dict[io]['yid'] = yid
+            io_dict[io]['zid'] = zid
+
+            io_dict[io]['residuals'] = residuals
+
+            if mask:
+                io_dict[io]['mask'] = io_dict[io]['io'].stream_mask
+            else:
+                io_dict[io]['mask'] = np.ones([io_dict[io]['io'].nx, io_dict[io]['io'].ny, io_dict[io]['io'].nz])
+        if not fig and not ax:
+            fig, ax = plt.subplots()
+        
+        legend = [] 
+
+        j = 0
+        for io in io_dict:
+            i = 0
+            for term in io_dict[io]['terms']:     
+                xid = io_dict[io]['xid']
+                yid = io_dict[io]['yid']
+                zid = io_dict[io]['zid']
+                nonDim = io_dict[io]['nonDim']
+
+                if i==0:
+                    legend.append(ax.bar(i + j*width, nonDim*np.trapz(np.trapz(np.trapz(io_dict[io]['io'].budget[term][xid,yid,zid] * io_dict[io]['mask'][xid,yid,zid],
+                                            x=io_dict[io]['io'].zLine[zid], axis=2),
+                                            x=io_dict[io]['io'].yLine[yid], axis=1),
+                                            x=io_dict[io]['io'].xLine[xid], axis=0), width=width, color=color_list[i], alpha=io_dict[io]['alpha']))
+                else:
+                    ax.bar(i + j*width, nonDim*np.trapz(np.trapz(np.trapz(io_dict[io]['io'].budget[term][xid,yid,zid] * io_dict[io]['mask'][xid,yid,zid], 
+                                            x=io_dict[io]['io'].zLine[zid], axis=2),
+                                            x=io_dict[io]['io'].yLine[yid], axis=1),
+                                                       x=io_dict[io]['io'].xLine[xid], axis=0), width=width, color=color_list[i], alpha=io_dict[io]['alpha'])
+                io_dict[io]['residuals'] = io_dict[io]['residuals'] + io_dict[io]['io'].budget[term][xid,yid,zid]
+                i+=1
+            j+=1
+     
+        k = 0
+        for io in io_dict:
+            xid = io_dict[io]['xid']
+            yid = io_dict[io]['yid']
+            zid = io_dict[io]['zid']
+            nonDim = io_dict[io]['nonDim']
+
+
+            ax.bar(len(io_dict[io]['terms']) + k*width, nonDim*np.trapz(np.trapz(np.trapz(io_dict[io]['residuals'] * io_dict[io]['mask'][xid,yid,zid], 
+                                            x=io_dict[io]['io'].zLine[zid], axis=2),
+                                            x=io_dict[io]['io'].yLine[yid], axis=1),
+                                            x=io_dict[io]['io'].xLine[xid], axis=0), width=width, color='black', alpha=io_dict[io]['alpha'])      
+            k+=1      
+        print(i)       
+        
+        ax.set_xticks(range(i+1))
+        ax.set_xticklabels(labels)
+
+        legend_labels = [io_dict[io]['legend_label'] for io in io_dict]
         ax.legend(handles=legend, labels=legend_labels)
 
         return fig, ax
@@ -524,7 +816,8 @@ class PlotIO():
             
         return fig, ax
 
-    def plot_budget_in_x(self, io, budget, coords=None, fig=None, ax=None, alpha=1, xScale=1, nonDim=1, **kwargs):
+    def plot_budget_in_x(self, io, budget, coords=None, fig=None, ax=None, alpha=1, color_list=plt.rcParams['axes.prop_cycle'].by_key()['color'], 
+                         xScale=1, nonDim=1, linestyle='-', mask=None, **kwargs):
         '''
         Plots a given budget
         
@@ -538,7 +831,13 @@ class PlotIO():
         ax : axes object
         '''
 
-        keys, colors = self.get_terms(io, budget)
+        if not isinstance(budget, list):
+            keys, _ = self.get_terms(io, budget)
+        else:
+            keys = budget
+
+        if mask is None:
+            mask = np.ones([io.nx, io.ny, io.nz])
         
         if not coords:
             xid = (slice(0, len(io.xLine)), )
@@ -554,19 +853,17 @@ class PlotIO():
         residual = 0
         
         i=0
-        for key in keys:
-            # color = [color_value for color_key, color_value in colors if color_key in key]
-            color_list = plt.rcParams['axes.prop_cycle'].by_key()['color']     
-
-            ax.plot(io.xLine[xid]*xScale, np.mean(io.budget[key][xid,yid,zid], axis=(1,2))*nonDim, label=key, alpha=alpha,  color=color_list[i], **kwargs)
+        for key in keys:   
+            ax.plot(io.xLine[xid]*xScale, (1/np.count_nonzero(mask[xid,yid,zid])) * np.sum(np.multiply(io.budget[key][xid,yid,zid], mask[xid,yid,zid]), axis=(1,2))*nonDim, 
+                    label=key, alpha=alpha,  color=color_list[i], linestyle=linestyle, **kwargs)
 
             residual += io.budget[key]
             i+=1
 
-        ax.plot(io.xLine[xid]*xScale, np.mean(residual[xid,yid,zid], axis=(1,2))*nonDim, 
+        ax.plot(io.xLine[xid]*xScale, (1/np.count_nonzero(mask[xid,yid,zid])) * np.sum(np.multiply(residual[xid,yid,zid], mask[xid,yid,zid]), axis=(1,2))*nonDim, 
             label='Residual', linestyle='--', color='black',alpha=alpha)
 
-        ax.set_ylabel('$z/D$')
+        ax.set_xlabel('$x/D$')
             
         return fig, ax
 
@@ -608,12 +905,48 @@ class PlotIO():
 
         return fig, ax
 
-    def make_gif(dir, start, stop, interval):
 
-        def animate(i):
-            im = plt.imread(dir+str(i*interval + start)+'.png')
-            plt.imshow(im)
-            plt.axis('off')
+    # Plot slices of the data at the given coordinates
+    def plot_slices(self, io, xloc, key, ylim=None, zlim=None, ax=None, cbar=False, nonDim=1, vmin=-1, vmax=1):
+
+        if ylim is None:
+            ylim = [io.yLine[0], io.yLine[-1]]
+        
+        if zlim is None:
+            zlim = [io.zLine[0], io.zLine[-1]]
+
+        xid, yid, zid = io.get_xids(x=xloc, y=ylim, z=zlim, return_none=True, return_slice=True)
+
+        x = io.xLine
+        y = io.yLine[yid]
+        z = io.zLine[zid]
+        data = io.budget[key][...,yid,zid]
+
+        if ax is None:
+            ax = plt.figure().add_subplot(111, projection='3d')
+        # Take slices interpolating to allow for arbitrary values
+        data_x = scipy.interpolate.interp1d(x, data, axis=0, kind='quadratic')(xloc)
+
+        # Plot X slice
+        
+        num_levels = 22
+        midpoint = 0
+        levels = np.linspace(vmin, vmax, num_levels)
+        midp = np.mean(np.c_[levels[:-1], levels[1:]], axis=1)
+        vals = np.interp(midp, [vmin, midpoint, vmax], [0, 0.5, 1])
+        colorchoice = plt.cm.bwr(vals)
+        cmap, norm = colors.from_levels_and_colors(levels, colorchoice)  
+        xs, ys, zs = data.shape
+        xplot = ax.plot_surface(xloc, y[:, np.newaxis], z[np.newaxis, :], rstride=1, cstride=1, facecolors=cmap(norm(data_x*nonDim)), shade=False)
+
+        if cbar:
+            sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+            plt.colorbar(sm, ax=ax, shrink=0.1, label='$\overline{\Delta u}\; (m/s)$')
+            
+        ax.invert_yaxis()
+        
+        return xplot
+    
 
     def get_terms(self, io, budget):
         """
@@ -650,7 +983,9 @@ class PlotIO():
             if 'TKE_turb_transport_delta_base' in io.key.keys():
                 keys.insert(2,'TKE_turb_transport_delta_base')
             if 'TKE_prod_delta_delta' in io.key.keys():
-                keys.remove('TKE_production')
+                # keys.remove('TKE_production')
+                keys.remove('TKE_prod_delta_delta')
+                keys.remove('TKE_prod_base_delta')
             colors = self.budget_colors
         else:
             print("Please enter a valid budget type. Options include: x-mom, y-mom, z-mom, and MKE.")
@@ -697,7 +1032,7 @@ class PlotIO():
 
 
         return keys, colors
-    
+
 # ----------- additional helper functions ------------
 
 def common_cbar(fig, image, ax=None, location='right', label=None, height=1., width=0.02): 
