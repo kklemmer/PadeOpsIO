@@ -1,9 +1,18 @@
 import matplotlib.pyplot as plt
 import numpy as np
-import matplotlib.legend_handler
+
 import scipy.interpolate
+
 from matplotlib import colors
 from mpl_toolkits.mplot3d import Axes3D
+
+import os
+import sys
+import matplotlib.legend_handler
+
+import os
+import sys
+import matplotlib.legend_handler
 
 import padeopsIO.budgetkey as budgetkey
 import padeopsIO.deficitkey as deficitkey
@@ -419,7 +428,7 @@ class PlotIO():
             wake = [False] * len(io_list)
 
         if not color_list:
-            color_list = plt.rcParams['axes.prop_cycle'].by_key()['color']     
+            color_list = sns.color_palette("tab10", len(terms))    
 
         if not alpha_list:
             alpha_list = np.ones(len(terms))      
@@ -770,7 +779,7 @@ class PlotIO():
 
         return fig, ax
 
-    def plot_budget(self, io, budget, coords=None, fig=None, ax=None, alpha=1, zScale=1, nonDim=1, **kwargs):
+    def plot_budget(self, io, budget, coords=None, fig=None, ax=None, alpha=1, zScale=1, nonDim=1, color_list=plt.rcParams['axes.prop_cycle'].by_key()['color'], **kwargs):
         '''
         Plots the MKE budget
         
@@ -784,7 +793,8 @@ class PlotIO():
         ax : axes object
         '''
 
-        keys, colors = self.get_terms(io, budget)
+        if not isinstance(budget,list):
+            keys, _ = self.get_terms(io, budget)
         
         if not coords:
             xid = (slice(0, len(io.xLine)), )
