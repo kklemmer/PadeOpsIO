@@ -94,6 +94,7 @@ class BudgetIO():
         self.associate_field = False
         self.associate_turbines = False
         self.normalized_xyz = False
+        self.normalize_grid = False
 
         if ('padeops' in kwargs) and kwargs['padeops']: 
             try: 
@@ -129,7 +130,6 @@ class BudgetIO():
         if 'read_budgets' in kwargs: 
             # if read_budgets passed in as keyword argument, read budgets on initialization
             self.read_budgets(budget_terms=kwargs['read_budgets'])
-    
 
     def _init_padeops(self, **kwargs): 
         """
@@ -312,8 +312,8 @@ class BudgetIO():
         else: 
             self.Fr = np.Inf
 
-#        if self.input_nml['problem_input']['Tref']:
-#            self.Tref = self.input_nml['problem_input']['Tref']
+        if self.input_nml['problem_input']['Tref']:
+            self.Tref = self.input_nml['problem_input']['Tref']
         
         
 
@@ -369,6 +369,21 @@ class BudgetIO():
                     self.zLine -= self.turbineArray.zloc
                     
                     self.normalized_xyz = True
+
+        if 'normalize_grid' in kwargs and kwargs['normalize_grid']:
+            if "Lnorm" not in kwargs:
+                print("Normalize grid requires Lnorm to be specifiec")
+            else:
+                Lnorm = kwargs['Lnorm']
+                print("Normalizing grid with Lnorm = {}".format(Lnorm))
+                
+                self.dx /= Lnorm
+                self.dy /= Lnorm
+                self.dz /= Lnorm
+
+                self.xLine /= Lnorm
+                self.yLine /= Lnorm
+                self.zLine /= Lnorm
 
 
     def _init_npz(self, **kwargs): 
@@ -695,7 +710,7 @@ class BudgetIO():
             'v':'vVel', 
             'w':'wVel', 
             'p':'prss', 
-            #'T':'potT', 
+            'T':'potT', 
         #    'pfrn': 'pfrn',  # fringe pressure
         #    'pdns': 'pdns',  # DNS pressure... what is this? 
         #    'ptrb': 'ptrb',  # turbine pressure... what is this? 
@@ -1349,7 +1364,20 @@ class BudgetIO():
         if self.verbose: 
             print("calc_wake(): Computed wake velocities. ")
 
-    
+
+    def normalize_grid_func(self, Lref):
+        """
+        Normalize xLine, yLine, zLine, dx, dy, and dz by the specified Lref
+        """
+
+        self.dx /= Lref
+        self.dy /= Lref 
+        self.dz /= Lref
+
+        self.xLine /= Lref
+        self.yLine /= Lref
+        self.zLine /= Lref
+
     def slice(self, budget_terms=None, 
               field=None, field_terms=None, 
               sl=None, keys=None, terms_not_in_key=None, 
@@ -2078,7 +2106,7 @@ class BudgetIO():
         Calculates the rans budget terms (splits the advection term)
         """
         self.budget['xadv_mean'] = np.zeros([self.nx, self.ny, self.nz])
-        self.budget['xadv_mean'] = np.zeros([self.nx, self.ny, self.nz])
+        self.budget['yadv_mean'] = np.zeros([self.nx, self.ny, self.nz])
         self.budget['zadv_mean'] = np.zeros([self.nx, self.ny, self.nz])
 
         self.budget['xturb'] = np.zeros([self.nx, self.ny, self.nz])
@@ -2089,21 +2117,21 @@ class BudgetIO():
         self.budget['xadv_mean'] = - np.multiply(self.budget['ubar'], tmp_grad[:,:,:,0]) \
                                     - np.multiply(self.budget['vbar'], tmp_grad[:,:,:,1]) \
                                     - np.multiply(self.budget['wbar'], tmp_grad[:,:,:,2])
-        self.budget['xturb'] = self.budget['DuDt'] - self.budget['xmom_mean_adv']
+        self.budget['xturb'] = self.budget['DuDt'] - self.budget['xadv_mean']
 
         tmp_grad = np.transpose(np.gradient(self.budget['vbar'], self.xLine, self.yLine, self.zLine), [1,2,3,0])
         self.budget['yadv_mean'] = - np.multiply(self.budget['ubar'], tmp_grad[:,:,:,0]) \
                                     - np.multiply(self.budget['vbar'], tmp_grad[:,:,:,1]) \
                                     - np.multiply(self.budget['wbar'], tmp_grad[:,:,:,2])
-        self.budget['yturb'] = self.budget['DvDt'] - self.budget['xmom_mean_adv']
+        self.budget['yturb'] = self.budget['DvDt'] - self.budget['yadv_mean']
 
         tmp_grad = np.transpose(np.gradient(self.budget['wbar'], self.xLine, self.yLine, self.zLine), [1,2,3,0])
         self.budget['zadv_mean'] = - np.multiply(self.budget['ubar'], tmp_grad[:,:,:,0]) \
                                     - np.multiply(self.budget['vbar'], tmp_grad[:,:,:,1]) \
                                     - np.multiply(self.budget['wbar'], tmp_grad[:,:,:,2])
-        self.budget['zturb'] = self.budget['DwDt'] - self.budget['xmom_mean_adv']   
+        self.budget['zturb'] = self.budget['DwDt'] - self.budget['zadv_mean']   
 
-    def grad_calc(self, tidx=None, precursor=None, Lref=1):
+    def grad_calc(self, tidx=None, Lref=1):
         """precursor
         Calculates the velocity and reynolds stress gradients 
         """
@@ -2145,545 +2173,21 @@ class BudgetIO():
         self.budget['S23'] = 0.5*(tmp_grad_v[:,:,:,2] + tmp_grad_w[:,:,:,1])
         self.budget['S33'] = tmp_grad_w[:,:,:,2]
 
-        if 'delta_u_base_u' in self.key:
-            self.budget['base_delta_S11'] = np.zeros([self.nx, self.ny, self.nz])
-            self.budget['base_delta_S12'] = np.zeros([self.nx, self.ny, self.nz])
-            self.budget['base_delta_S13'] = np.zeros([self.nx, self.ny, self.nz])
-            self.budget['base_delta_S22'] = np.zeros([self.nx, self.ny, self.nz])
-            self.budget['base_delta_S21'] = np.zeros([self.nx, self.ny, self.nz])
-            self.budget['base_delta_S23'] = np.zeros([self.nx, self.ny, self.nz])
-            self.budget['base_delta_S31'] = np.zeros([self.nx, self.ny, self.nz])
-            self.budget['base_delta_S32'] = np.zeros([self.nx, self.ny, self.nz])
-            self.budget['base_delta_S33'] = np.zeros([self.nx, self.ny, self.nz])
+def nonDim_L(self, Lref):
+    """
+    nondimensionalize x, y, and z
 
-            tmp_grad_delta_u = np.transpose(np.gradient(self.budget['delta_u'], self.xLine*Lref, self.yLine*Lref, self.zLine*Lref), [1,2,3,0])
-            tmp_grad_delta_v = np.transpose(np.gradient(self.budget['delta_v'], self.xLine*Lref, self.yLine*Lref, self.zLine*Lref), [1,2,3,0])
-            tmp_grad_delta_w = np.transpose(np.gradient(self.budget['delta_w'], self.xLine*Lref, self.yLine*Lref, self.zLine*Lref), [1,2,3,0])
+    Lref (float) - length scale to nondimensionalize by
+    """
 
-            tmp_grad_base_u = np.transpose(np.gradient(precursor.budget['ubar'], precursor.xLine*Lref, precursor.yLine*Lref, precursor.zLine*Lref), [1,2,3,0])
-            tmp_grad_base_v = np.transpose(np.gradient(precursor.budget['vbar'], precursor.xLine*Lref, precursor.yLine*Lref, precursor.zLine*Lref), [1,2,3,0])
-            tmp_grad_base_w = np.transpose(np.gradient(precursor.budget['wbar'], precursor.xLine*Lref, precursor.yLine*Lref, precursor.zLine*Lref), [1,2,3,0])
+    self.dx /= Lref
+    self.dy /= Lref
+    self.dz /= Lref
 
-            self.budget['base_delta_S11'] = 0.5*(tmp_grad_base_u[:,:,:,0] + tmp_grad_delta_u[:,:,:,0])
-            self.budget['base_delta_S12'] = 0.5*(tmp_grad_base_u[:,:,:,1] + tmp_grad_delta_v[:,:,:,0])
-            self.budget['base_delta_S13'] = 0.5*(tmp_grad_base_u[:,:,:,2] + tmp_grad_delta_w[:,:,:,0])
-            self.budget['base_delta_S21'] = 0.5*(tmp_grad_base_v[:,:,:,0] + tmp_grad_delta_u[:,:,:,1])
-            self.budget['base_delta_S22'] = 0.5*(tmp_grad_base_v[:,:,:,1] + tmp_grad_delta_v[:,:,:,1])
-            self.budget['base_delta_S23'] = 0.5*(tmp_grad_base_v[:,:,:,2] + tmp_grad_delta_w[:,:,:,1])
-            self.budget['base_delta_S31'] = 0.5*(tmp_grad_base_w[:,:,:,0] + tmp_grad_delta_u[:,:,:,2])
-            self.budget['base_delta_S32'] = 0.5*(tmp_grad_base_w[:,:,:,1] + tmp_grad_delta_v[:,:,:,2])
-            self.budget['base_delta_S33'] = 0.5*(tmp_grad_base_w[:,:,:,2] + tmp_grad_delta_w[:,:,:,2])
-        return
-    #### Functions for plotting budgets ####
+    self.xLine /= Lref
+    self.yLine /= Lref
+    self.zLine /= Lref
 
-    # production      - blues
-    # transport       - reds
-    # redistributions - yellows
-    # dissipation     - purples
-    # coriolis        - greens
-    
-    momentum_budget_colors = {"Dt": "tab:blue", 
-                              "dpd": "tab:orange",
-                              "SGS": "tab:green",
-                              "AD": "tab:red",
-                              "Cor": "tab:purple",
-                              "Geo": "tab:brown",
-                              "B": "tab:gray"}
-
-    budget_colors = {"shear_production": "tab:blue",
-                     "buoyancy" : "tab:gray",
-                     "AD" : "tab:cyan",
-                     "adv" : "tab:orange", #
-                     "p_transport" : "tab:purple",  #
-                     "SGS_transport" : "tab:brown",   #
-                     "turb_transport" : "tab:green", #
-                     "p_strain" : "tab:red", #
-                     "dissipation" : "tab:pink", #
-                     "coriolis" : 'tab:olive'} #
-    '''
-    {"shear_production": "#7e82ed", #
-                     "buoyancy" : "#0b5394",
-                     "AD" : "#1e90ff",
-                     "adv" : "gray", #
-                     "p_transport" : "#439a1d",  #
-                     "SGS_transport" : "#7926c7",   #
-                     "turb_transport" : "#f01094", #
-                     "p_strain" : "#ffae1d", #
-                     "dissipation" : "red", #
-                     "coriolis" : '#42b79b'} #
-    '''
-    def plot_budget_momentum(self, component=None, coords=None, fig=None, ax=None, linestyle=None, alpha=None):
-        '''
-        Plots the mean momentum budget for a given component
-        
-        Arguments
-        ---------
-        component (int) : vector component of the mean momentum budget to plot
-                          1 - streamwise (x)
-                          2 - lateral    (y)
-                          3 - vertical   (w)
-
-        Returns
-        -------
-        fig : figure object 
-        ax : axes object
-        '''
-
-        if component is None:
-            # default to the streamwise mean momentum budget
-            component = 1
-        if component == 1:
-            comp_str = ['DuDt', 'x']
-        elif component == 2:
-            comp_str = ['DvDt', 'y']
-        elif component == 3:
-            comp_str = ['DwDt', 'z']
-        else:
-            print("Please enter a valid component number. Valid options are 1, 2, 3, or None (defaults to 1).")
-            return None
-
-        if coords is None:
-            xid = (slice(0, len(self.xLine)), )
-            yid = (slice(0, len(self.yLine)), )
-            zid = (slice(0, len(self.zLine)), ) 
-        else:
-            xid, yid, zid = self.get_xids(x=coords[0], y=coords[1], z=coords[2], return_none=True, return_slice=True)
-        
-        keys = [key for key in self.key if self.key[key][0] == 1]
-
-        keys = [key for key in keys if comp_str[0] in key or comp_str[1] in key]
-
-
-        if not fig or not ax:    
-            fig, ax = plt.subplots()
-
-        if not linestyle:
-            linestyle = '-'
-        if not alpha:
-            alpha = 1
-
-        residual = 0
-        
-        for key in keys:
-            color = [color_value for color_key, color_value in self.momentum_budget_colors.items() if color_key in key]
-            print(slice(*coords[1]))
-            ax.plot(np.mean(np.mean(self.budget[key][xid,yid,zid], axis=1), axis=0), 
-                self.zLine, label=key, linestyle=linestyle, alpha=alpha, 
-                color = color[0])
-            residual += self.budget[key]
-
-        ax.plot(np.mean(np.mean(residual[xid,yid,zid], axis=1), axis=0), 
-                self.zLine, label='Residual', linestyle=linestyle, color='black', alpha=alpha)
-
-        ax.set_ylabel('$z/L$')
-            
-        return fig, ax
-
-    def plot_budget_tke(self, fig=None, ax=None, linestyle=None, alpha=None, coords=None):
-        '''
-        Plots the tke budget
-        
-        Arguments
-        ---------
-        
-        Returns
-        -------
-        fig : figure object 
-        ax : axes object
-        '''
-        
-        keys = [key for key in budgetkey.get_key() if budgetkey.get_key()[key][0] == 3]
-        key_labels = budgetkey.key_labels()
-
-        if coords is None:
-            coords = [(0,len(self.xLine)-1), (0, len(self.yLine)-1), (0, len(self.zLine)-1)]
-
-        if not linestyle:
-            linestyle = '-'
-        if not alpha:
-            alpha = 1
-
-        if not ax and not fig:
-            fig, ax = plt.subplots()
-
-        residual = 0
-        
-        for key in keys:
-            ax.plot(np.mean(np.mean(self.budget[key][slice(*coords[0]), slice(*coords[1]), slice(*coords[2])], axis=1), axis=0), 
-                self.zLine, label=key,  color = self.budget_colors[key.replace("TKE_", "")], 
-                linestyle=linestyle, alpha=alpha) 
-            residual += self.budget[key]
-
-        ax.plot(np.mean(np.mean(residual[slice(*coords[0]), slice(*coords[1]), slice(*coords[2])], axis=1), axis=0), 
-            self.zLine, label='Residual', linestyle='--', color='black')
-
-        ax.set_ylabel('$z/L$')
-            
-        return fig, ax
-
-    def plot_budget_mke(self, coords=None):
-        '''
-        Plots the tke budget
-        
-        Arguments
-        ---------
-        
-        Returns
-        -------
-        fig : figure object 
-        ax : axes object
-        '''
-        
-        if coords is None:
-            coords = [(0,len(self.xLine)-1), (0, len(self.yLine)-1), (0, len(self.zLine)-1)]
-
-
-        keys = [key for key in budgetkey.get_key() if budgetkey.get_key()[key][0] == 2]
-        key_labels = budgetkey.key_labels()
-
-        fig, ax = plt.subplots()
-
-        residual = 0
-        
-        for key in keys:
-            ax.plot(np.mean(np.mean(self.budget[key][slice(*coords[0]), slice(*coords[1]), slice(*coords[2])], axis=1), axis=0), self.zLine, label=key)
-            residual += self.budget[key]
-
-        ax.plot(np.mean(np.mean(residual[slice(*coords[0]), slice(*coords[1]), slice(*coords[2])], axis=1), axis=0), 
-            self.zLine, label='Residual', linestyle='--', color='black')
-
-        ax.set_ylabel('$z/L$')
-            
-        return fig, ax
-
-    def plot_budget_uiuj(self, component, fig=None, ax=None, linestyle=None, alpha=None, coords=None):
-        '''
-        Plots the tke budget
-        
-        Arguments
-        ---------
-        
-        Returns
-        -------
-        fig : figure object 
-        ax : axes object
-        '''
-
-        if coords is None:
-            coords = [(0,len(self.xLine)-1), (0, len(self.yLine)-1), (0, len(self.zLine)-1)]
-
-
-        comp_dict = {11 : [1, 10],
-                     22 : [11, 20],
-                     33 : [21, 30],
-                     13 : [31, 40],
-                     23 : [41, 50]}
-
-        comp_str_dict = {11 : 'uu',
-                         22 : 'vv',
-                         33 : 'ww',
-                         13 : 'uw',
-                         23 : 'vw'}
-
-        
-        if not linestyle:
-            linestyle = '-'
-
-        if not alpha:
-            alpha = 1
-
-        keys = [key for key in budgetkey.get_key() if budgetkey.get_key()[key][0] == 4 and budgetkey.get_key()[key][1] in range(comp_dict[component][0], comp_dict[component][1])]
-        
-        if not ax and not fig:
-            fig, ax = plt.subplots()
-
-        residual = 0
-        
-        for key in keys:
-            ax.plot(np.mean(np.mean(self.budget[key][slice(*coords[0]), slice(*coords[1]), slice(*coords[2])], axis=1), axis=0), 
-                self.zLine, label=key, color = self.budget_colors[key.replace(comp_str_dict[component] + "_", "")], 
-                linestyle=linestyle, alpha=alpha)
-            residual += self.budget[key]
-
-        ax.plot(np.mean(np.mean(residual[slice(*coords[0]), slice(*coords[1]), slice(*coords[2])], axis=1), axis=0), 
-            self.zLine, label='Residual', linestyle=linestyle, color='black')
-
-        ax.set_ylabel('$z/L$')
-            
-        return fig, ax
-
-    
-    def plot_budget_xy_momentum(self, component=None):
-        '''
-        Plots the mean momentum budget for a given component
-        
-        Arguments
-        ---------
-        component (int) : vector component of the mean momentum budget to plot
-                          1 - streamwise (x)
-                          2 - lateral    (y)
-                          3 - vertical   (w)
-
-        Returns
-        -------
-        fig : figure object 
-        ax : axes object
-        '''
-
-        if component is None:
-            # default to the streamwise mean momentum budget
-            component = 1
-
-        if component == 1:
-            comp_str = ['u', 'x']
-        elif component == 2:
-            comp_str = ['v', 'y']
-        elif component == 3:
-            comp_str = ['w', 'z']
-        else:
-            print("Please enter a valid component number. Valid options are 1, 2, 3, or None (defaults to 1).")
-            return None
-        
-        keys = [key for key in budgetkey.get_key_xy() if budgetkey.get_key_xy()[key][0] == 1]
-
-        keys = [key for key in keys if comp_str[0] in key or comp_str[1] in key]
-        
-        fig, ax = plt.subplots()
-
-        residual = 0
-        
-        for key in keys:
-            ax.plot(self.budget_xy[key], self.zLine, label = key)
-            residual += self.budget_xy[key]
-
-        ax.plot(residual, self.zLine, label='Residual', linestyle='--', color='black')
-
-        ax.set_ylabel('$z/L$')
-            
-        return fig, ax
-    
-
-    def plot_budget_xy_tke(self, fig=None, ax=None, linestyle=None, alpha=None):
-        '''
-        Plots the tke budget
-        
-        Arguments
-        ---------
-        
-        Returns
-        -------
-        fig : figure object 
-        ax : axes object
-        '''
-
-        if not linestyle:
-            linestyle = '-'
-        if not alpha:
-            alpha = 1
-        
-        keys = [key for key in budgetkey.get_key_xy() if budgetkey.get_key_xy()[key][0] == 3]
-        key_labels = budgetkey.key_labels()
-
-        if not ax and not fig:
-            fig, ax = plt.subplots()
-
-        residual = 0
-        
-        for key in keys:
-            ax.plot(self.budget_xy[key], self.zLine, label=key,color = self.budget_colors[key.replace("TKE_", "")], 
-                    linestyle=linestyle, alpha=alpha)
-            residual += self.budget_xy[key]
-
-        ax.plot(residual, self.zLine, label='Residual', linestyle='--', color='black')
-
-        ax.set_ylabel('$z/L$')
-            
-        return fig, ax
-
-
-    def plot_budget_xy_mke(self):
-        '''
-        Plots the tke budget
-        
-        Arguments
-        ---------
-        
-        Returns
-        -------
-        fig : figure object 
-        ax : axes object
-        '''
-        
-        keys = [key for key in budgetkey.get_key_xy() if budgetkey.get_key_xy()[key][0] == 2]
-        key_labels = budgetkey.key_labels()
-
-        fig, ax = plt.subplots()
-
-        residual = 0
-        
-        for key in keys:
-            ax.plot(self.budget_xy[key], self.zLine, label=key)
-            residual += self.budget_xy[key]
-
-        ax.plot(residual, self.zLine, label='Residual', linestyle='--', color='black')
-
-        ax.set_ylabel('$z/L$')
-            
-        return fig, ax
-
-    
-    def plot_budget_xy_uu(self, fig=None, ax=None, linestyle=None, alpha=None):
-        '''
-        Plots the streamwise variance <uu> budget
-        
-        Arguments
-        ---------
-        
-        Returns
-        -------
-        fig : figure object 
-        ax : axes object
-        '''
-
-        if not linestyle:
-            linestyle = '-'
-
-        if not alpha:
-            alpha = 1
-        
-        keys = [key for key in budgetkey.get_key_xy() if budgetkey.get_key_xy()[key][0] == 4 and budgetkey.get_key_xy()[key][1] >= 1 and budgetkey.get_key_xy()[key][1] <= 9]
-        key_labels = budgetkey.key_labels()
-
-        if not ax and not fig:
-            fig, ax = plt.subplots()
-
-        residual = 0
-        
-        for key in keys:
-            ax.plot(self.budget_xy[key], self.zLine, label = key, color = self.budget_colors[key.replace("uu_", "")], linestyle=linestyle, alpha=alpha)
-            residual += self.budget_xy[key]
-
-        ax.plot(residual, self.zLine, label='Residual', linestyle='--', color='black')
-
-        ax.set_ylabel('$z/L$')
-            
-        return fig, ax
-
-
-    def plot_budget_xy_uw(self, fig=None, ax=None, linestyle=None, alpha=None):
-        '''
-        Plots the streamwise variance <uu> budget
-        
-        Arguments
-        ---------
-        
-        Returns
-        -------
-        fig : figure object 
-        ax : axes object
-        '''
-        
-        if not linestyle:
-            linestyle = '-'
-
-        if not alpha:
-            alpha = 1
-
-        keys = [key for key in budgetkey.get_key_xy() if budgetkey.get_key_xy()[key][0] == 4 and budgetkey.get_key_xy()[key][1] >= 10 and budgetkey.get_key_xy()[key][1] <= 18]
-        key_labels = budgetkey.key_labels()
-
-        if not ax and not fig:
-            fig, ax = plt.subplots()
-
-        residual = 0
-        
-        for key in keys:
-            ax.plot(self.budget_xy[key], self.zLine, label = key, color = self.budget_colors[key.replace("uw_", "")], linestyle=linestyle, alpha=alpha)
-            residual += self.budget_xy[key]
-
-        ax.plot(residual, self.zLine, label='Residual', linestyle='--', color='black')
-
-        ax.set_ylabel('$z/L$')
-            
-        return fig, ax
-
-
-    def plot_budget_xy_vw(self, fig=None, ax=None, linestyle=None, alpha=None):
-        '''
-        Plots the streamwise variance <uu> budget
-        
-        Arguments
-        ---------
-        
-        Returns
-        -------
-        fig : figure object 
-        ax : axes object
-        '''
-
-        
-        if not linestyle:
-            linestyle = '-'
-
-        if not alpha:
-            alpha = 1
-        
-        keys = [key for key in budgetkey.get_key_xy() if budgetkey.get_key_xy()[key][0] == 4 and budgetkey.get_key_xy()[key][1] >= 19 and budgetkey.get_key_xy()[key][1] <= 27]
-        key_labels = budgetkey.key_labels()
-
-        if not ax and not fig:
-            fig, ax = plt.subplots()
-
-        residual = 0
-        
-        for key in keys:
-            ax.plot(self.budget_xy[key], self.zLine, label = key, color = self.budget_colors[key.replace("vw_", "")], linestyle=linestyle, alpha=alpha)
-            residual += self.budget_xy[key]
-
-        ax.plot(residual, self.zLine, label='Residual', linestyle='--', color='black')
-
-        ax.set_ylabel('$z/L$')
-            
-        return fig, ax
-
-
-    def plot_budget_xy_ww(self, fig=None, ax=None, linestyle=None, alpha=None):
-        '''
-        Plots the streamwise variance <uu> budget
-        
-        Arguments
-        ---------
-        
-        Returns
-        -------
-        fig : figure object 
-        ax : axes object
-        '''
-        
-        
-        if not linestyle:
-            linestyle = '-'
-
-        if not alpha:
-            alpha = 1
-
-        keys = [key for key in budgetkey.get_key_xy() if budgetkey.get_key_xy()[key][0] == 4 and budgetkey.get_key_xy()[key][1] >= 28 and budgetkey.get_key_xy()[key][1] <= 36]
-        key_labels = budgetkey.key_labels()
-
-        if not ax and not fig:
-            fig, ax = plt.subplots()
-
-        residual = 0
-        
-        for key in keys:
-            ax.plot(self.budget_xy[key], self.zLine, label = key, color = self.budget_colors[key.replace("ww_", "")], linestyle=linestyle, alpha=alpha)
-            residual += self.budget_xy[key]
-
-        ax.plot(residual, self.zLine, label='Residual', linestyle='--', color='black')
-
-        ax.set_ylabel('$z/L$')
-            
-        return fig, ax
 
 if __name__ == "__main__": 
     """
