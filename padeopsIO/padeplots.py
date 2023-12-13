@@ -1,18 +1,11 @@
-import matplotlib.pyplot as plt
 import numpy as np
 
-import scipy.interpolate
-
+import matplotlib.pyplot as plt
+import matplotlib.legend_handler
 from matplotlib import colors
 from mpl_toolkits.mplot3d import Axes3D
 
-import os
-import sys
-import matplotlib.legend_handler
-
-import os
-import sys
-import matplotlib.legend_handler
+import scipy.interpolate
 
 import padeopsIO.budgetkey as budgetkey
 import padeopsIO.deficitkey as deficitkey
