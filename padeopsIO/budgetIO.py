@@ -320,8 +320,8 @@ class BudgetIO():
         else: 
             self.Fr = np.Inf
 
-        if self.input_nml['problem_input']['Tref']:
-            self.Tref = self.input_nml['problem_input']['Tref']
+        if self.input_nml['problem_input']['tref']:
+            self.Tref = self.input_nml['problem_input']['tref']
         
         
 
@@ -383,6 +383,22 @@ class BudgetIO():
             
             else: 
                 self.normalize_origin(kwargs['normalize_origin'])
+        
+        if 'normalize_grid' in kwargs and kwargs['normalize_grid']:
+            if "Lnorm" not in kwargs:
+                print("Normalize grid requires Lnorm to be specific")
+            else:
+                Lnorm = kwargs['Lnorm']
+                print("Normalizing grid with Lnorm = {}".format(Lnorm))
+                
+                self.dx /= Lnorm
+                self.dy /= Lnorm
+                self.dz /= Lnorm
+
+                self.xLine /= Lnorm
+                self.yLine /= Lnorm
+                self.zLine /= Lnorm
+
             
 
 
@@ -410,22 +426,6 @@ class BudgetIO():
             self.zLine += self.origin[2]
             self.normalized_xyz=False
             self.origin = (0, 0, 0)
-
-        if 'normalize_grid' in kwargs and kwargs['normalize_grid']:
-            if "Lnorm" not in kwargs:
-                print("Normalize grid requires Lnorm to be specifiec")
-            else:
-                Lnorm = kwargs['Lnorm']
-                print("Normalizing grid with Lnorm = {}".format(Lnorm))
-                
-                self.dx /= Lnorm
-                self.dy /= Lnorm
-                self.dz /= Lnorm
-
-                self.xLine /= Lnorm
-                self.yLine /= Lnorm
-                self.zLine /= Lnorm
-
 
     def _init_npz(self, **kwargs): 
         """
@@ -1512,8 +1512,8 @@ class BudgetIO():
 
         elif budget_terms is not None: 
             # read budgets
-            keys = self._parse_budget_terms(budget_terms)
-            self.read_budgets(budget_terms=keys, tidx=tidx, overwrite=overwrite)
+            key_subet = self._parse_budget_terms(budget_terms)
+            self.read_budgets(budget_terms=key_subset, tidx=tidx, overwrite=overwrite)
             preslice = self.budget
 
             for term in key_subset: 
