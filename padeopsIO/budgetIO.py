@@ -1512,26 +1512,22 @@ class BudgetIO():
 
         elif budget_terms is not None: 
             # read budgets
-            key_subet = self._parse_budget_terms(budget_terms)
-            self.read_budgets(budget_terms=key_subset, tidx=tidx, overwrite=overwrite)
+            keys = self._parse_budget_terms(budget_terms)
+            self.read_budgets(budget_terms=keys, tidx=tidx, overwrite=overwrite)
             preslice = self.budget
-
-            for term in key_subset: 
-                slices[term] = np.squeeze(self.budget[term][xid, yid, zid])  
-            slices['keys'] = list(key_subset.keys())  # save the terms 
 
         elif terms_not_in_key is not None:
             for term in terms_not_in_key:
                 slices[term] = np.squeeze(self.budget[term][xid, yid, zid])  
             slices['keys'] = list(terms_not_in_key)  # save the terms
 
-        elif keys is not None and sl is not None: 
-            # slice into slices
-            if type(keys) == list: 
-                for key in keys: 
-                    slices[key] = np.squeeze(sl[key][xid, yid, zid])
-                slices['keys'] = keys
-
+        elif sl is not None: 
+            preslice = sl
+            # parse keys: 
+            if keys is None: 
+                keys = sl['keys']
+            elif type(keys) != list: 
+                keys = [keys]
             else: 
                 # TODO: Fix slicing into 2D slices. This is a known bug
                 slices[key] = np.squeeze(sl[xid, yid, zid])
