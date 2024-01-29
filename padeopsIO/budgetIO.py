@@ -897,7 +897,7 @@ class BudgetIO():
         
         Parameters 
         ----------
-        budget_terms : list 
+        budget_terms : list or string
             Budget terms (see ._parse_budget_terms() and budgetkey.py)
         mmap : str, optional
             Default None. Sets the memory-map settings in numpy.load(). 
@@ -923,8 +923,7 @@ class BudgetIO():
             self.calc_wake()
             
             if self.verbose: 
-                print("read_budgets: Successfully loaded wake budgets. ")
-
+                print("read_budgets: Successfully loaded wake budgets. ")        
 
         # parse budget_terms with the key
         key_subset = self._parse_budget_terms(budget_terms, include_wakes=False)
@@ -1181,7 +1180,13 @@ class BudgetIO():
                             'uu', 'uv', 'uw', 'vv', 'vw', 'ww', 
                             'dpdx', 'dpdy', 'dpdz',
                             'tau11', 'tau12', 'tau13', 'tau22', 'tau23', 'tau33']
-
+        elif 'budget' in budget_terms and any(chr.isdigit() for chr in budget_terms):
+            budgetnum = re.findall('[0-5]', budget_terms)
+            if len(budgetnum) < 1 or len(budgetnum) > 1:
+                raise AttributeError('read_budgets(): budget_terms incorrectly specified. \n String should contain a single number from 0-5.')
+            else:
+                budget_terms = terms = [term for term in self.key if self.key[term][0] == int(budgetnum[0])]
+                    
         elif type(budget_terms)==str: 
             warnings.warn("keyword argument budget_terms must be either 'default', 'all', 'RANS' or a list.")
             return {}  # empty dictionary
@@ -1517,9 +1522,8 @@ class BudgetIO():
             preslice = self.budget
 
         elif terms_not_in_key is not None:
-            for term in terms_not_in_key:
-                slices[term] = np.squeeze(self.budget[term][xid, yid, zid])  
-            slices['keys'] = list(terms_not_in_key)  # save the terms
+            preslice = self.budget
+            keys = terms_not_in_key
 
         elif sl is not None: 
             preslice = sl
@@ -2220,6 +2224,9 @@ class BudgetIO():
         """
         Calculates the rans budget terms (splits the advection term)
         """
+        if 'xadv_mean' in self.budget:
+            return
+
         self.budget['xadv_mean'] = np.zeros([self.nx, self.ny, self.nz])
         self.budget['yadv_mean'] = np.zeros([self.nx, self.ny, self.nz])
         self.budget['zadv_mean'] = np.zeros([self.nx, self.ny, self.nz])
@@ -2247,9 +2254,11 @@ class BudgetIO():
         self.budget['zturb'] = self.budget['DwDt'] - self.budget['zadv_mean']   
 
     def grad_calc(self, tidx=None, Lref=1):
-        """precursor
+        """
         Calculates the velocity and reynolds stress gradients 
         """
+        if 'S11' in self.budget:
+            return
 
         self.budget['S11'] = np.zeros([self.nx, self.ny, self.nz])
         self.budget['S12'] = np.zeros([self.nx, self.ny, self.nz])
