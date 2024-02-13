@@ -240,7 +240,7 @@ class BudgetIO():
                         
         # search all files ending in '*.dat' 
         inputfile_ls = glob.glob(self.dir_name + os.sep + '*.dat')  # for now, just search this 
-        
+
         if len(inputfile_ls) == 0: 
             raise FileNotFoundError('_read_inputfile(): No inputfiles found at {:s}'.format(self.dir_name))
             
@@ -733,7 +733,7 @@ class BudgetIO():
                 print('with fields', save_dict.keys())
         
             
-    def read_fields(self, field_terms=None, tidx=None): 
+    def read_fields(self, field_terms=None, tidx=None, time=None): 
         """
         Reads fields from PadeOps output files into the self.field dictionary. 
         
@@ -773,8 +773,14 @@ class BudgetIO():
             terms = [t for t in field_terms if t in dict_match.keys()]
         
         # parse tidx
-        if tidx is None: 
+        if tidx is None and time is None: 
             tidx = self.last_tidx
+        elif time is not None:
+            times = np.array(self.unique_times())
+            tidxs = np.array(self.unique_tidx())
+            closest_tidx = tidxs[np.argmin(np.abs(times - time))]
+
+            tidx = closest_tidx
         elif tidx not in self.unique_tidx(): 
             # find the nearest that actually exists
             tidx_arr = np.array(self.unique_tidx())
@@ -782,6 +788,7 @@ class BudgetIO():
 
             print("Requested budget tidx={:d} could not be found. Using tidx={:d} instead.".format(tidx, closest_tidx))
             tidx = closest_tidx 
+            
 
         self.tidx = tidx
         
