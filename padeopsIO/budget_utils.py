@@ -2,6 +2,7 @@
 
 import numpy as np
 import os
+import warnings
 import padeopsIO
 
 def advection(uj, arr, dx, dy, dz):
@@ -87,3 +88,179 @@ def construct_duidxj(io):
     duidxj[...,2,2] = io.budget['dWdz']
 
     return duidxj
+
+def tke_calc(io):
+    """
+    Compute TKE for BudgetIO or DeficitIO
+    """
+
+
+    if isinstance(io, padeopsIO.DeficitIO):
+        # check to make sure the BudgetIO object has uu, vv, and ww
+        if 'delta_uu' not in io.budget:
+            io.read_budgets(budget_terms=['delta_uu', 'delta_u_base_u'])
+        if 'delta_vv' not in io.budget:
+            io.read_budgets(budget_terms=['delta_vv', 'delta_v_base_v'])
+        if 'delta_ww' not in io.budget:
+            io.read_budgets(budget_terms=['delta_ww', 'delta_w_base_w'])
+
+        io.budget['TKE'] = 0.5 * (io.budget['delta_uu'] + io.budget['delta_vv'] + io.budget['delta_ww']) \
+                             + io.budget['delta_u_base_u'] + io.budget['delta_v_base_v'] + io.budget['delta_w_base_w']
+
+    elif isinstance(io, padeopsIO.BudgetIO):
+        # check to make sure the BudgetIO object has uu, vv, and ww
+        if 'uu' not in io.budget:
+            io.read_budgets(budget_terms='uu')
+        if 'vv' not in io.budget:
+            io.read_budgets(budget_terms='vv')
+        if 'ww' not in io.budget:
+            io.read_budgets(budget_terms='ww')
+
+        io.budget['TKE'] = 0.5 * (io.budget['uu'] + io.budget['vv'] + io.budget['ww'])
+
+def mke_calc(io):
+    """
+    Compute TKE for BudgetIO or DeficitIO
+    """
+
+
+    if isinstance(io, padeopsIO.DeficitIO):
+        return
+
+    elif isinstance(io, padeopsIO.BudgetIO):
+        # check to make sure the BudgetIO object has uu, vv, and ww
+        if 'ubar' not in io.budget:
+            io.read_budgets(budget_terms='ubar')
+        if 'vbar' not in io.budget:
+            io.read_budgets(budget_terms='vbar')
+        if 'wbar' not in io.budget:
+            io.read_budgets(budget_terms='wbar')
+
+        io.budget['MKE'] = 0.5 * (io.budget['ubar']**2 + io.budget['vbar']**2 + io.budget['wbar']**2)
+
+
+def flux_calc(io, budget_terms, direction, coords=None, yc=None, overwrite=False, streamwise=False, suffix=''):
+    """
+    Calculate the flux of given quantity
+    
+    INPUTS:
+    io - BudgetIO of DeficitIO object
+    budget_terms - string or list of strings that correspond to budget terms
+    direction - 'x', 'y', or 'z'. Indicates the normal direction of the surface
+    coords (optional) - tuples of x, y, or z coordinates to take the flux over
+    """
+
+    if isinstance(budget_terms, str):
+        budget_terms = [budget_terms]
+    elif not isinstance(budget_terms, list):
+        print("positional argument budget_terms must be either a string or a list.")
+        return 
+
+    if isinstance(io, padeopsIO.DeficitIO):
+        velocities = ['delta_u', 'delta_v', 'delta_w']
+    elif isinstance(io, padeopsIO.BudgetIO):
+        velocities = ['ubar', 'vbar', 'wbar']
+    else:
+        print("keyword argument io must be either a BudgetIO or DeficitIO object.")
+        return
+
+    if not coords:
+        xid = slice(0, len(io.xLine))
+        yid = slice(0, len(io.yLine))
+        zid = slice(0, len(io.zLine)) 
+    else:
+        xid, yid, zid = io.get_xids(x=coords[0], y=coords[1], z=coords[2], return_none=True, return_slice=True)
+
+    if direction == 'x':
+        vel = velocities[0]
+        axis = (1,2)
+        dx1 = io.dy
+        dx2 = io.dz
+    elif direction == 'y':
+        vel = velocities[1]
+        if streamwise:
+            axis = 2
+            dx1 = 1
+            dx2 = io.dz
+        else:
+            axis = (0,2)
+            dx1 = io.dx
+            dx2 = io.dz
+    elif direction == 'z':
+        vel = velocities[2]
+        if streamwise:
+            axis = 1
+            dx1 = 1
+            dx2 = io.dy
+        else:
+            axis = (0,1)
+            dx1 = io.dx
+            dx2 = io.dy
+    else:
+        print("positional argument direction must be either 'x', 'y', or 'z'.") 
+        return
+        
+
+    if yc is not None:
+        # check to make sure that yc is the same length as xcoords
+        if len(io.xLine[xid]) != len(yc) and len(io.xLine) != len(yc):
+            print("yc must have the same length as the x coordinates or be the total length of the domain")
+            return
+        else:
+            y_r =  (io.yLine[yid.stop-1] - io.yLine[yid.start])/2
+            for term in budget_terms:
+                if term + '_flux_' + direction + suffix in io.budget and not overwrite:
+                    return
+                else:
+                    if vel not in io.budget:
+                        io.read_budgets(budget_terms=[vel])
+                    if term not in io.budget:
+                        io.read_budgets(budget_terms=[term])
+                #io.budget[term + '_flux_' + direction + suffix] = np.zeros(
+                tmp = []
+                for i in range(xid.start, xid.stop):
+                    xid, yid, zid = io.get_xids(x=io.xLine[i], y=[yc[i] - y_r, yc[i] + y_r], z=coords[2], return_none=True, return_slice=True)
+                    tmp.append(np.sum(io.budget[vel][xid, yid, zid] * io.budget[term][xid,yid,zid], axis = axis ) * dx1 * dx2)
+
+                io.budget[term + '_flux_' + direction + suffix] = np.array(tmp).ravel()
+                if isinstance(axis, tuple) and 0 in axis:
+                    io.budget[term + '_flux_' + direction + suffix] = np.sum(io.budget[term + '_flux_' + direction + suffix], axis=0)
+    else:
+        for term in budget_terms:
+            # check to see if flux term exists
+            if term + '_flux_' + direction + suffix in io.budget and not overwrite:
+                return
+            else:
+                if vel not in io.budget:
+                    io.read_budgets(budget_terms=[vel])
+                if term not in io.budget:
+                    io.read_budgets(budget_terms=[term])
+                io.budget[term + '_flux_' + direction + suffix] = np.sum(io.budget[vel][xid, yid, zid] * io.budget[term][xid,yid,zid], axis = axis ) * dx1 * dx2
+                
+
+    
+def TI_calc_hh(prim, pre):
+    """
+    Calculate I0 and I_wake at hub height
+    """
+
+    zh = np.argmin(np.abs(prim.zLine))
+
+    uh = np.mean(pre.budget['ubar'][...,zh], axis=(0,1))
+
+    I0 = np.sqrt(pre.budget['uu'] + pre.budget['vv'])/uh
+
+    _, yid, zid = prim.get_xids(y=[-1,1], z=[0,1], return_none=True, return_slice=True)
+
+    print(yid, zid)
+
+    I_wake = np.sqrt(prim.budget['uu'] + prim.budget['vv'])/uh
+ 
+    return I0, I_wake
+
+
+def TI_calc(io):
+    
+    I = np.sqrt(io.budget['uu'] + io.budget['vv'])
+
+    return I
