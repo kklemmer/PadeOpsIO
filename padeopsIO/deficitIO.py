@@ -281,12 +281,103 @@ class DeficitIO(pio.BudgetIO):
         for j in range(3):
             for k in range(3):
                 print(np.shape(np.gradient(tmp_delta_uiuj[:,:,:,j,k], self.xLine*Lref, self.yLine*Lref, self.zLine*Lref)))
-                self.budget['ddxi_delta_uiuj'][:,:,:,:,j,k] = np.transpose(np.gradient(tmp_delta_uiuj[:,:,:,j,k], self.xLine*Lref, self.yLine*Lref, self.zLine*Lref), [1,2,3,0]) 
-                self.budget['ddxi_delta_ui_base_uj'][:,:,:,:,j,k] = np.transpose(np.gradient(tmp_delta_ui_base_uj[:,:,:,j,k], self.xLine*Lref, self.yLine*Lref, self.zLine*Lref), [1,2,3,0]) 
+                self.budget['ddxk_delta_uiuj'][:,:,:,:,j,k] = np.transpose(np.gradient(tmp_delta_uiuj[:,:,:,j,k], self.xLine*Lref, self.yLine*Lref, self.zLine*Lref), [1,2,3,0]) 
+                self.budget['ddxk_delta_ui_base_uj'][:,:,:,:,j,k] = np.transpose(np.gradient(tmp_delta_ui_base_uj[:,:,:,j,k], self.xLine*Lref, self.yLine*Lref, self.zLine*Lref), [1,2,3,0]) 
 
 
         return
 
+    def rans_calc(self, tidx=None):
+        """
+        Calculates the rans budget terms (splits the advection term)
+        """
+        if 'xadv_mean' in self.budget:
+            return
+
+        
+        self.budget['xadv_mean'] = self.budget['xAdv_delta_delta_mean'] + self.budget['xAdv_base_delta_mean']
+        self.budget['yadv_mean'] = self.budget['yAdv_delta_delta_mean'] + self.budget['yAdv_base_delta_mean']
+        self.budget['zadv_mean'] = self.budget['zAdv_delta_delta_mean'] + self.budget['zAdv_base_delta_mean']
+        
+        self.budget['xturb'] = self.budget['xAdv_delta_delta_fluc'] + self.budget['xAdv_base_delta_fluc'] + self.budget['xAdv_delta_base_fluc']
+        self.budget['yturb'] = self.budget['yAdv_delta_delta_fluc'] + self.budget['yAdv_base_delta_fluc'] + self.budget['yAdv_delta_base_fluc']
+        self.budget['zturb'] = self.budget['zAdv_delta_delta_fluc'] + self.budget['zAdv_base_delta_fluc'] + self.budget['zAdv_delta_base_fluc']
+
+    def xmom_budget_calc(self, pre, prim):
+        """
+        Calculates the terms in the streamwise momentum budget
+        grouped according to the forward marching a priori analysis
+        """
+        
+        # read in necessary terms for deficit budget
+        def_budget0_terms = [term for term in self.key if self.key[term][0] == 0]
+        def_budget1_terms = [term for term in self.key if self.key[term][0] == 1]
+
+        self.read_budgets(budget_terms=def_budget0_terms)
+        self.read_budgets(budget_terms=def_budget1_terms)
+
+        # read in necessary terms for base and primary budget
+        budget0_terms = ['ubar', 'vbar', 'wbar']
+        pre.read_budgets(budget_terms=budget0_terms)
+        prim.read_budgets(budget_terms=budget0_terms)
+        
+
+        # calculate gradients
+        self.grad_calc()
+        pre.grad_calc()
+        prim.grad_calc()
+
+        # perform RANS calculation
+        self.rans_calc()
+        
+        # separate out advection terms
+        self.budget['xadv_mean_x'] = -prim.budget['ubar'] * self.budget['dUdx']
+        self.budget['xadv_mean_y_delta'] = -self.budget['delta_v'] * self.budget['dUdy']
+        self.budget['xadv_mean_z_delta'] = -self.budget['delta_w'] * self.budget['dUdz']
+        self.budget['xadv_mean_y_base'] = -pre.budget['vbar'] * self.budget['dUdy']
+        self.budget['xadv_mean_z_base'] = -pre.budget['wbar'] * self.budget['dUdz']
+
+        self.budget['xadv_mean_yz_base'] = self.budget['xadv_mean_y_base'] + self.budget['xadv_mean_z_base']
+        self.budget['xadv_mean_yz_delta'] = self.budget['xadv_mean_y_delta'] + self.budget['xadv_mean_z_delta']
+        self.budget['xadv_mean_yz_delta_total'] = self.budget['xadv_mean_y_delta'] + self.budget['xadv_mean_z_delta'] \
+                                            + self.budget['xAdv_delta_base_mean']
+
+    def wake_tke_budget_calc(self, pre, prim):
+        """
+        Calculate term sin the wake tKE budget
+        """
+        # read in necessary terms for deficit budget
+        def_budget_terms = [term for term in self.key if self.key[term][0] == 3]
+        #self.read_budgets(budget_terms=def_budget_terms)
+        #def_budget0_terms = ['delta_u', 'delta_v', 'delta_w']
+        #self.read_budgets(budget_terms=def_budget0_terms)
+
+        # # read in necessary terms for precursor and primary budgets
+        budget_terms = [term for term in pre.key if pre.key[term][0] == 3]
+        #pre.read_budgets(budget_terms=budget_terms)
+        #prim.read_budgets(budget_terms=budget_terms) 
+
+        #budget0_terms = ['ubar', 'vbar', 'wbar', 'uu', 'vv', 'ww']
+        #pre.read_budgets(budget_terms=budget0_terms)
+        #prim.read_budgets(budget_terms=budget0_terms)
+
+        dx = self.dx
+        dy = self.dy
+        dz = self.dz
+
+        # define TKE
+        pre.budget['TKE'] = 0.5*(pre.budget['uu'] + pre.budget['vv'] + pre.budget['ww'])
+        prim.budget['TKE'] = 0.5*(prim.budget['uu'] + prim.budget['vv'] + prim.budget['ww'])
+
+        self.budget['TKE_wake'] = prim.budget['TKE'] - pre.budget['TKE']
+
+        # calculate TKE wake budget (prim - pre)
+        for term in budget_terms:
+                self.budget[term + "_wake"] = prim.budget[term] - pre.budget[term]
+
+        # addition base advection term needs to be removed from TKE_adv_wake
+        self.budget['TKE_adv_delta_base_k_wake'] = -advection([self.budget['delta_u'], self.budget['delta_v'], self.budget['delta_w']], pre.budget['TKE'], dx, dy, dz)
+    
     def tke_budget_calc(self, pre, prim):
         """
         Calculates terms in the TKE budget grouped together
@@ -318,6 +409,10 @@ class DeficitIO(pio.BudgetIO):
         prim.grad_calc()
         self.grad_calc()
 
+        dx = self.dx
+        dy = self.dy
+        dz = self.dz
+
         # define TKE
         pre.budget['TKE'] = 0.5*(pre.budget['uu'] + pre.budget['vv'] + pre.budget['ww'])
         prim.budget['TKE'] = 0.5*(prim.budget['uu'] + prim.budget['vv'] + prim.budget['ww'])
@@ -342,14 +437,16 @@ class DeficitIO(pio.BudgetIO):
         for term in budget_terms:
                 self.budget[term + "_wake"] = prim.budget[term] - pre.budget[term]
 
-        # advection terms
-        dx = self.dx
-        dy = self.dy
-        dz = self.dz
-        self.budget['mixed_TKE_base_adv'] = advection([pre.budget['ubar'], pre.budget['vbar'], pre.budget['wbar']], self.budget['delta_ui_base_ui'], dx, dy, dz)
-        self.budget['mixed_TKE_delta_adv'] = advection([self.budget['delta_u'], self.budget['delta_v'], self.budget['delta_w']], self.budget['delta_ui_base_ui'], dx, dy, dz)
+        # addition base advection term needs to be removed from TKE_adv_wake
+        self.budget['TKE_adv_delta_base_k_wake'] = -advection([self.budget['delta_u'], self.budget['delta_v'], self.budget['delta_w']], pre.budget['TKE'], dx, dy, dz)
 
-        self.budget['mixed_TKE_adv_delta_base_k'] = advection([self.budget['delta_u'], self.budget['delta_v'], self.budget['delta_w']], pre.budget['TKE'], dx, dy, dz)
+        #self.budget['TKE_adv_wake'] = self.budget['TKE_adv_wake'] - self.budget['TKE_adv_delta_base_k_wake']
+
+        # advection terms
+        self.budget['mixed_TKE_base_adv'] = -advection([pre.budget['ubar'], pre.budget['vbar'], pre.budget['wbar']], self.budget['delta_ui_base_ui'], dx, dy, dz)
+        self.budget['mixed_TKE_delta_adv'] = -advection([self.budget['delta_u'], self.budget['delta_v'], self.budget['delta_w']], self.budget['delta_ui_base_ui'], dx, dy, dz)
+
+        self.budget['mixed_TKE_adv_delta_base_k'] = self.budget['TKE_adv_delta_base_k_wake']
         self.budget['mixed_TKE_adv_delta_base'] = self.budget['mixed_TKE_base_adv'] - self.budget['TKE_adv_delta_base']
 
         self.budget['mixed_TKE_adv'] = self.budget['TKE_adv_wake'] - self.budget['TKE_adv'] - self.budget['TKE_adv_delta_base']
