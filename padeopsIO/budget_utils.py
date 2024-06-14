@@ -110,11 +110,11 @@ def tke_calc(io):
     elif isinstance(io, padeopsIO.BudgetIO):
         # check to make sure the BudgetIO object has uu, vv, and ww
         if 'uu' not in io.budget:
-            io.read_budgets(budget_terms='uu')
+            io.read_budgets(budget_terms=['uu'])
         if 'vv' not in io.budget:
-            io.read_budgets(budget_terms='vv')
+            io.read_budgets(budget_terms=['vv'])
         if 'ww' not in io.budget:
-            io.read_budgets(budget_terms='ww')
+            io.read_budgets(budget_terms=['ww'])
 
         io.budget['TKE'] = 0.5 * (io.budget['uu'] + io.budget['vv'] + io.budget['ww'])
 
@@ -138,6 +138,38 @@ def mke_calc(io):
 
         io.budget['MKE'] = 0.5 * (io.budget['ubar']**2 + io.budget['vbar']**2 + io.budget['wbar']**2)
 
+
+def tke_wake_prod_calc(base, deficit):
+    """
+    Calculate wake tke production 
+    """
+
+    delta_uiuj = construct_delta_uiuj(deficit)
+    delta_ui_base_uj = construct_delta_ui_base_uj(deficit)
+    base_uiuj = construct_uiuj(base)
+
+    delta_duidxj = construct_duidxj(deficit)
+    base_duidxj = construct_duidxj(base)
+
+    P_DDD = -np.sum(delta_uiuj * delta_duidxj, axis=(3,4))
+    P_DDB = -np.sum(delta_uiuj * base_duidxj, axis=(3,4))
+    P_DBB = -np.sum(delta_ui_base_uj * base_duidxj, axis=(3,4))
+    P_BDD = -np.sum(delta_ui_base_uj * delta_duidxj, axis=(3,4))
+    P_BBD = -np.sum(base_uiuj * delta_duidxj, axis=(3,4))
+    P_BDB = -np.sum(delta_ui_base_uj * base_duidxj, axis=(3,4))
+    P_DBD = -np.sum(delta_ui_base_uj * delta_duidxj, axis=(3,4))
+
+    deficit.budget['P_DDD'] = P_DDD
+    deficit.budget['P_DDB'] = P_DDB
+    deficit.budget['P_DBB'] = P_DBB
+    deficit.budget['P_BDD'] = P_BDD
+    deficit.budget['P_BBD'] = P_BBD
+    deficit.budget['P_BDB'] = P_BDB
+    deficit.budget['P_DBD'] = P_DBD
+    
+    deficit.budget['P_grad_B'] = P_DDB + P_BDB + P_DBB
+
+    deficit.budget['P_wake'] = P_DDD + P_DDB + P_DBB + P_BDD + P_BBD + P_DBD + P_BDB
 
 def flux_calc(io, budget_terms, direction, coords=None, yc=None, overwrite=False, streamwise=False, suffix=''):
     """
@@ -264,3 +296,12 @@ def TI_calc(io):
     I = np.sqrt(io.budget['uu'] + io.budget['vv'])
 
     return I
+
+def vorticity_calc(io):
+
+    if 'dUdx' not in io.budget:
+        io.grad_calc()
+
+    io.budget['omega_x'] = io.budget['dWdy'] - io.budget['dVdz']
+    io.budget['omega_y'] = io.budget['dUdz'] - io.budget['dWdx']
+    io.budget['omega_z'] = io.budget['dVdx'] - io.budget['dUdy']
